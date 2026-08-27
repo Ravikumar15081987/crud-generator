@@ -96,6 +96,7 @@ class MakeCrudCommand extends Command
             [
                 '{{ class }}', 
                 '{{ modelName }}', 
+                '{{ model }}',                   
                 '{{ modelNameLowerCase }}', 
                 '{{ modelNamePluralLowerCase }}',
                 '{{ namespace }}',
@@ -104,6 +105,7 @@ class MakeCrudCommand extends Command
             [
                 $className,
                 $modelName, 
+                $modelName,                  
                 $modelNameLowerCase, 
                 $modelNamePluralLowerCase,
                 $namespace,
