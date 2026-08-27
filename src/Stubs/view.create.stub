@@ -1,0 +1,23 @@
+@extends('layouts/layoutMaster')
+@section('title', 'Create {{ modelName }}')
+
+@section('content')
+<div class="flex-grow-1 py-4">
+    <h4 class="fw-bold text-dark mb-4">Create {{ modelName }}</h4>
+
+    <div class="card border-0 shadow-sm rounded-4 p-4">
+        <form action="{{ route('{{ routeName }}.store') }}" method="POST" enctype="multipart/form-data">
+            @csrf
+            <div class="row g-3">
+                
+                @include('{{ viewPrefix }}{{ modelNameLowerCase }}._form')
+                
+                <div class="col-12 mt-4 text-end">
+                    <a href="{{ route('{{ routeName }}.index') }}" class="btn btn-light me-2">Cancel</a>
+                    <button type="submit" class="btn btn-dark">Save {{ modelName }}</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+@endsection

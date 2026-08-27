@@ -21,12 +21,18 @@ class MakeCrudCommand extends Command
     public function handle()
     {
         $name = $this->argument('name');
+        
+        // 1. Ask the user for a role (Admin, User, etc.)
+        $roleInput = $this->ask('Which role is this for? (e.g., Admin, Manager, or leave empty for default)');
+        $role = $roleInput ? ucfirst(trim($roleInput)) : null;
+
         $all = $this->option('all') || (
             ! $this->option('controller') && ! $this->option('service') && 
             ! $this->option('repository') && ! $this->option('views') && 
             ! $this->option('requests') && ! $this->option('route')
         );
 
+        // Repositories & Services usually remain global (not role-specific)
         if ($all || $this->option('repository')) {
             $this->generateFile($name, 'Repositories/Contracts', "{$name}RepositoryInterface", 'repository.contract.stub');
             $this->generateFile($name, 'Repositories/Eloquent', "{$name}Repository", 'repository.impl.stub');
@@ -42,51 +48,120 @@ class MakeCrudCommand extends Command
             $this->generateFile($name, 'Http/Requests', "Update{$name}Request", 'request.stub');
         }
 
+        // 2. Adjust Controller path based on the role
         if ($all || $this->option('controller')) {
-            $this->generateFile($name, 'Http/Controllers', "{$name}Controller", 'controller.stub');
+            $controllerPath = $role ? "Http/Controllers/{$role}" : "Http/Controllers";
+            $this->generateFile($name, $controllerPath, "{$name}Controller", 'controller.stub', $role);
         }
 
+        // 3. Adjust View paths based on the role
         if ($all || $this->option('views')) {
-            $this->generateView($name, 'create');
-            $this->generateView($name, 'index');
-            $this->generateView($name, 'show');
-            $this->generateView($name, 'edit');
+            $this->generateView($name, 'create', $role);
+            $this->generateView($name, '_form', $role); // Generates the shared form partial
+            $this->generateView($name, 'index', $role);
+            $this->generateView($name, 'show', $role);
+            $this->generateView($name, 'edit', $role);
         }
 
         if ($all || $this->option('route')) {
-            $this->appendRoute($name);
+            $this->appendRoute($name, $role);
         }
 
         $this->info("CRUD architecture for {$name} generated successfully.");
     }
 
-    protected function generateFile($name, $path, $className, $stubName)
+    protected function generateFile($name, $path, $className, $stubName, $role = null)
     {
         $stubPath = __DIR__ . '/../Stubs/' . $stubName;
         $destinationPath = app_path("{$path}/{$className}.php");
-        $this->buildAndSaveClass($name, $className, $stubPath, $destinationPath);
+
+        \Illuminate\Support\Facades\File::ensureDirectoryExists(dirname($destinationPath));
+
+        if (!\Illuminate\Support\Facades\File::exists($stubPath)) {
+            $this->error("Stub not found: {$stubPath}");
+            return;
+        }
+        
+        $stubContent = \Illuminate\Support\Facades\File::get($stubPath);
+
+        $modelName = $name; 
+        $modelNameLowerCase = strtolower($name); 
+        $modelNamePluralLowerCase = \Illuminate\Support\Str::plural($modelNameLowerCase); 
+
+        // Dynamic Namespace and View Prefix based on Role
+        $namespace = $role ? "App\Http\Controllers\\{$role}" : "App\Http\Controllers";
+        $viewPrefix = $role ? strtolower($role) . '.' : '';
+
+        $fileContent = str_replace(
+            [
+                '{{ class }}', 
+                '{{ modelName }}', 
+                '{{ modelNameLowerCase }}', 
+                '{{ modelNamePluralLowerCase }}',
+                '{{ namespace }}',
+                '{{ viewPrefix }}'
+            ], 
+            [
+                $className,
+                $modelName, 
+                $modelNameLowerCase, 
+                $modelNamePluralLowerCase,
+                $namespace,
+                $viewPrefix
+            ], 
+            $stubContent
+        );
+
+        \Illuminate\Support\Facades\File::put($destinationPath, $fileContent);
+        $this->info("Created: {$destinationPath}");
     }
 
-    protected function generateView($name, $viewType)
+    protected function generateView($name, $viewType, $role = null)
     {
-        $viewDir = resource_path("views/" . strtolower($name));
+        $modelNameLowerCase = strtolower($name);
+        $rolePath = $role ? strtolower($role) . '/' : '';
+        $viewDir = resource_path("views/{$rolePath}{$modelNameLowerCase}");
+        
         \Illuminate\Support\Facades\File::ensureDirectoryExists($viewDir);
-
         $destinationPath = $viewDir . "/{$viewType}.blade.php";
         
-        // Check if the view type is create or edit, and use the form stub
-        $stubFile = in_array($viewType, ['create', 'edit']) 
-            ? 'view.form.stub' 
-            : "view.{$viewType}.stub";
-
-        $stubPath = $this->getStubPath($stubFile);
+        // Use the specific stub for each view
+        $stubPath = $this->getStubPath("view.{$viewType}.stub");
 
         if (\Illuminate\Support\Facades\File::exists($stubPath)) {
             $stubContent = \Illuminate\Support\Facades\File::get($stubPath);
             
+            $routePrefix = $role ? strtolower($role) . '.' : '';
+            $routeName = $routePrefix . $modelNameLowerCase;
+            $viewPrefix = $role ? strtolower($role) . '.' : '';
+
+            // Dynamically generate Bootstrap 5 form fields if generating _form.blade.php
+            $formFieldsHtml = '';
+            if ($viewType === '_form') {
+                $modelClass = "\\App\\Models\\{$name}";
+                if (class_exists($modelClass)) {
+                    $model = new $modelClass();
+                    $fillable = $model->getFillable();
+                    
+                    foreach ($fillable as $field) {
+                        $label = ucwords(str_replace('_', ' ', $field));
+                        // Generate Bootstrap 5 columns and inputs
+                        $formFieldsHtml .= <<<HTML
+                            <div class="col-md-6">
+                                <label class="form-label">{$label} *</label>
+                                <input type="text" name="{$field}" class="form-control" value="{{ old('{$field}', \${$modelNameLowerCase}->{$field} ?? '') }}" required placeholder="e.g. {$label}">
+                            </div>\n
+                        HTML;
+                    }
+                }
+                if (empty($formFieldsHtml)) {
+                    $formFieldsHtml = "                <!-- Define your \$fillable array in {$name}.php to auto-generate inputs -->\n";
+                }
+            }
+
             $fileContent = str_replace(
-                ['{{ modelName }}', '{{ routeName }}'], 
-                [$name, strtolower($name)], 
+                ['{{ modelName }}', '{{ modelNameLowerCase }}', '{{ routeName }}', '{{ viewPrefix }}', '{{ formFields }}'], 
+                [$name, $modelNameLowerCase, $routeName, $viewPrefix, $formFieldsHtml], 
                 $stubContent
             );
 
@@ -117,23 +192,27 @@ class MakeCrudCommand extends Command
         $this->line("<info>Created:</info> {$destinationPath}");
     }
 
-    protected function appendRoute($name)
+    protected function appendRoute($name, $role = null)
     {
-        $routeFile = base_path('routes/web.php');
-        $routeUri = Str::plural(Str::kebab($name)); 
-        $controllerNamespace = "\\App\\Http\\Controllers\\{$name}Controller::class";
-        $routeDefinition = "\nRoute::resource('{$routeUri}', {$controllerNamespace});\n";
-
-        if (!File::exists($routeFile)) return;
-
-        $content = File::get($routeFile);
-        if (str_contains($content, "Route::resource('{$routeUri}'")) {
-            $this->warn("Route for {$name} already exists. Skipping.");
-            return;
+        $modelNameLowerCase = strtolower($name);
+        
+        if ($role) {
+            $controllerNamespace = "\\App\\Http\\Controllers\\{$role}\\{$name}Controller";
+            $prefix = strtolower($role);
+            
+            // Generates a route group with prefix, alias (as), and Spatie middleware
+            $routeDefinition = "\nRoute::group(['prefix' => '{$prefix}', 'as' => '{$prefix}.', 'middleware' => ['role:{$role}']], function () {\n" .
+                "    Route::resource('{$modelNameLowerCase}', {$controllerNamespace}::class);\n" .
+                "});\n";
+        } else {
+            // Standard route definition if no role is provided
+            $controllerNamespace = "\\App\\Http\\Controllers\\{$name}Controller";
+            $routeDefinition = "\nRoute::resource('{$modelNameLowerCase}', {$controllerNamespace}::class);\n";
         }
 
-        File::append($routeFile, $routeDefinition);
-        $this->line("<info>Appended route:</info> {$routeFile}");
+        \Illuminate\Support\Facades\File::append(base_path('routes/web.php'), $routeDefinition);
+        
+        $this->info("Appended route for {$name} to routes/web.php");
     }
 
     protected function generateTrait()

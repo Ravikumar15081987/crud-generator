@@ -1,45 +1,68 @@
 <?php
-namespace App\Http\Controllers;
 
-use App\Http\Requests\Store{{ model }}Request;
-use App\Http\Requests\Update{{ model }}Request;
-use App\Services\Contracts\{{ model }}ServiceInterface;
+namespace {{ namespace }};
 
-class {{ class }} extends Controller
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Store{{ modelName }}Request;
+use App\Http\Requests\Update{{ modelName }}Request;
+use App\Services\Contracts\{{ modelName }}ServiceInterface;
+
+class {{ modelName }}Controller extends Controller
 {
-    public function __construct(protected {{ model }}ServiceInterface $service) {}
+    protected $service;
 
-    public function index() {
-        ${{ modelVariable }}s = $this->service->getAll();
-        return view('{{ modelVariable }}.index', compact('{{ modelVariable }}s'));
+    public function __construct({{ modelName }}ServiceInterface $service)
+    {
+        $this->service = $service;
     }
 
-    public function create() {
-        return view('{{ modelVariable }}.create');
+    public function index()
+    {
+        ${{ modelNamePluralLowerCase }} = $this->service->all();
+        
+        return view('{{ viewPrefix }}{{ modelNameLowerCase }}.index', compact('{{ modelNamePluralLowerCase }}'));
     }
 
-    public function store(Store{{ model }}Request $request) {
+    public function create()
+    {
+        return view('{{ viewPrefix }}{{ modelNameLowerCase }}.create');
+    }
+
+    public function store(Store{{ modelName }}Request $request)
+    {
         $this->service->create($request->validated());
-        return redirect()->route('{{ modelVariable }}s.index')->with('success', 'Created successfully.');
+
+        return redirect()->route('{{ viewPrefix }}{{ modelNameLowerCase }}.index')
+            ->with('success', '{{ modelName }} created successfully.');
     }
 
-    public function show($id) {
-        ${{ modelVariable }} = $this->service->getById($id);
-        return view('{{ modelVariable }}.show', compact('{{ modelVariable }}'));
+    public function show($id)
+    {
+        ${{ modelNameLowerCase }} = $this->service->find($id);
+
+        return view('{{ viewPrefix }}{{ modelNameLowerCase }}.show', compact('{{ modelNameLowerCase }}'));
     }
 
-    public function edit($id) {
-        ${{ modelVariable }} = $this->service->getById($id);
-        return view('{{ modelVariable }}.edit', compact('{{ modelVariable }}'));
+    public function edit($id)
+    {
+        ${{ modelNameLowerCase }} = $this->service->find($id);
+
+        return view('{{ viewPrefix }}{{ modelNameLowerCase }}.edit', compact('{{ modelNameLowerCase }}'));
     }
 
-    public function update(Update{{ model }}Request $request, $id) {
+    public function update(Update{{ modelName }}Request $request, $id)
+    {
         $this->service->update($id, $request->validated());
-        return redirect()->route('{{ modelVariable }}s.index')->with('success', 'Updated successfully.');
+
+        return redirect()->route('{{ viewPrefix }}{{ modelNameLowerCase }}.index')
+            ->with('success', '{{ modelName }} updated successfully.');
     }
 
-    public function destroy($id) {
+    public function destroy($id)
+    {
         $this->service->delete($id);
-        return redirect()->route('{{ modelVariable }}s.index')->with('success', 'Deleted successfully.');
+
+        return redirect()->route('{{ viewPrefix }}{{ modelNameLowerCase }}.index')
+            ->with('success', '{{ modelName }} deleted successfully.');
     }
 }

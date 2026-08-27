@@ -2,44 +2,49 @@
 
 namespace App\Services\Implementation;
 
-use App\Services\Contracts\{{ model }}ServiceInterface;
-use App\Repositories\Contracts\{{ model }}RepositoryInterface;
+use App\Services\Contracts\{{ modelName }}ServiceInterface;
+use App\Repositories\Contracts\{{ modelName }}RepositoryInterface;
 use App\Traits\HandlesSafeTransactions;
 
-class {{ class }} implements {{ model }}ServiceInterface
+class {{ modelName }}Service implements {{ modelName }}ServiceInterface
 {
     use HandlesSafeTransactions;
 
-    public function __construct(protected {{ model }}RepositoryInterface $repository) {}
+    protected ${{ modelNameLowerCase }}Repository;
 
-    public function getAll()
+    public function __construct({{ modelName }}RepositoryInterface ${{ modelNameLowerCase }}Repository)
     {
-        return $this->repository->all();
+        $this->{{ modelNameLowerCase }}Repository = ${{ modelNameLowerCase }}Repository;
     }
 
-    public function getById($id)
+    public function all()
     {
-        return $this->repository->find($id);
+        return $this->{{ modelNameLowerCase }}Repository->all();
+    }
+
+    public function find($id)
+    {
+        return $this->{{ modelNameLowerCase }}Repository->find($id);
     }
 
     public function create(array $data)
     {
-        return $this->executeSafeTransaction(function () use ($data) {
-            return $this->repository->create($data);
+        return $this->safeTransaction(function () use ($data) {
+            return $this->{{ modelNameLowerCase }}Repository->create($data);
         });
     }
 
     public function update($id, array $data)
     {
-        return $this->executeSafeTransaction(function () use ($id, $data) {
-            return $this->repository->update($id, $data);
+        return $this->safeTransaction(function () use ($id, $data) {
+            return $this->{{ modelNameLowerCase }}Repository->update($id, $data);
         });
     }
 
     public function delete($id)
     {
-        return $this->executeSafeTransaction(function () use ($id) {
-            return $this->repository->delete($id);
+        return $this->safeTransaction(function () use ($id) {
+            return $this->{{ modelNameLowerCase }}Repository->delete($id);
         });
     }
 }
