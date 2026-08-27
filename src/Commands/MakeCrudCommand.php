@@ -184,12 +184,12 @@ class MakeCrudCommand extends Command
                     foreach ($fillable as $field) {
                         $label = ucwords(str_replace('_', ' ', $field));
                         $formFieldsHtml .= <<<HTML
-                <div class="col-md-6">
-                    <label class="form-label">{$label} *</label>
-                    <input type="text" name="{$field}" class="form-control @error('{$field}') is-invalid @enderror" value="{{ old('{$field}', \${$modelNameLowerCase}->{$field} ?? '') }}" placeholder="e.g. {$label}">
-                    <x-field-error field="{$field}" />
-                </div>\n
-HTML;
+                            <div class="col-md-6">
+                                <label class="form-label">{$label} *</label>
+                                <input type="text" name="{$field}" class="form-control @error('{$field}') is-invalid @enderror" value="{{ old('{$field}', \${$modelNameLowerCase}->{$field} ?? '') }}" placeholder="e.g. {$label}">
+                                <x-field-error field="{$field}" />
+                            </div>\n
+                        HTML;
                     }
                 }
                 if (empty($formFieldsHtml)) {
