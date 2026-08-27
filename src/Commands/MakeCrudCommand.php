@@ -331,4 +331,23 @@ class MakeCrudCommand extends Command
             $this->info("Generated base file: {$baseRequestPath}");
         }
     }
+
+    protected function generateErrorComponent()
+    {
+        $componentPath = resource_path('views/components/field-error.blade.php');
+
+        if (!File::exists($componentPath)) {
+            File::ensureDirectoryExists(dirname($componentPath));
+            
+            // Check this path exactly matches your stub file name!
+            $stubPath = __DIR__ . '/../Stubs/component.field-error.stub';
+            
+            if (File::exists($stubPath)) {
+                File::copy($stubPath, $componentPath);
+                $this->info("Generated missing UI component: resources/views/components/field-error.blade.php");
+            } else {
+                $this->error("Could not find the component stub at: {$stubPath}");
+            }
+        }
+    }
 }
