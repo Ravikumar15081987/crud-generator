@@ -92,14 +92,36 @@ class MakeCrudCommand extends Command
 
             $requestPath = $role ? "Http/Requests/{$role}" : "Http/Requests";
             
-            // Auto-generate basic validation rules based on model $fillable fields
+            // Auto-generate smart validation rules based on model $fillable and $casts
             $rulesString = '';
             $modelClass = "\\App\\Models\\{$name}";
             if (class_exists($modelClass)) {
                 $model = new $modelClass();
                 $fillable = $model->getFillable();
+                $casts = $model->getCasts(); // Reads the protected $casts array
+
                 foreach ($fillable as $field) {
-                    $rulesString .= "'{$field}' => 'required|string|max:255',\n            ";
+                    $rules = ['required'];
+                    
+                    // Determine data type based on casts or naming conventions
+                    $castType = $casts[$field] ?? null;
+                    
+                    if ($castType === 'boolean' || $castType === 'bool' || \Illuminate\Support\Str::startsWith($field, ['is_', 'has_'])) {
+                        $rules[] = 'boolean';
+                    } elseif ($castType === 'integer' || $castType === 'int' || \Illuminate\Support\Str::endsWith($field, '_id')) {
+                        $rules[] = 'integer';
+                    } elseif (in_array($castType, ['date', 'datetime']) || \Illuminate\Support\Str::endsWith($field, '_at')) {
+                        $rules[] = 'date';
+                    } else {
+                        $rules[] = 'string';
+                        // Drop the max:255 limit for fields that are likely text areas
+                        if (!in_array($field, ['description', 'body', 'content', 'notes'])) {
+                            $rules[] = 'max:255';
+                        }
+                    }
+
+                    $implodedRules = implode('|', $rules);
+                    $rulesString .= "'{$field}' => '{$implodedRules}',\n            ";
                 }
             } else {
                 $rulesString = "// Define your validation rules here\n";
