@@ -90,7 +90,7 @@ class MakeCrudCommand extends Command
         if ($all || $this->option('requests')) {
             $this->generateBaseRequestFiles();
 
-            $requestPath = $role ? "Http/Requests/{$role}" : "Http/Requests";
+            $requestPath = $roleFolder ? "Http/Requests/{$roleFolder}" : "Http/Requests";
             
             // Auto-generate smart validation rules based on model $fillable and $casts
             $rulesString = '';
@@ -127,8 +127,8 @@ class MakeCrudCommand extends Command
                 $rulesString = "// Define your validation rules here\n";
             }
 
-            $this->generateFile($name, $requestPath, "Store{$name}Request", 'request.stub', $role, ['{{ rules }}' => $rulesString]);
-            $this->generateFile($name, $requestPath, "Update{$name}Request", 'request.stub', $role, ['{{ rules }}' => $rulesString]);
+            $this->generateFile($name, $requestPath, "Store{$name}Request", 'request.stub', $roleFolder, ['{{ rules }}' => $rulesString]);
+            $this->generateFile($name, $requestPath, "Update{$name}Request", 'request.stub', $roleFolder, ['{{ rules }}' => $rulesString]);
         }
 
         if ($all || $this->option('controller')) {
@@ -173,9 +173,10 @@ class MakeCrudCommand extends Command
         $modelNameLowerCase = strtolower($name);
         $modelNamePluralLowerCase = Str::plural($modelNameLowerCase);
 
-        $namespace = $role ? "App\Http\Controllers\\{$role}" : "App\Http\Controllers";
-        $viewPrefix = $role ? strtolower($role) . '.' : '';
-        $requestNamespace = $role ? "App\Http\Requests\\{$role}" : "App\Http\Requests"; 
+        $roleFolder = $role ? ucfirst(strtolower($role)) : null;
+        $namespace = $roleFolder ? "App\Http\Controllers\\{$roleFolder}" : "App\Http\Controllers";
+        $viewPrefix = $roleFolder ? strtolower($roleFolder) . '.' : '';
+        $requestNamespace = $roleFolder ? "App\Http\Requests\\{$roleFolder}" : "App\Http\Requests";        
 
         $search = [
             '{{ class }}', '{{ modelName }}', '{{ model }}',
