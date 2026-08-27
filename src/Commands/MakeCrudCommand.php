@@ -48,6 +48,8 @@ class MakeCrudCommand extends Command
 
         if ($all || $this->option('views')) {
             $this->generateView($name, 'create');
+            $this->generateView($name, 'index');
+            $this->generateView($name, 'show');
             $this->generateView($name, 'edit');
         }
 
@@ -65,12 +67,32 @@ class MakeCrudCommand extends Command
         $this->buildAndSaveClass($name, $className, $stubPath, $destinationPath);
     }
 
-    protected function generateView($name, $viewName)
+    protected function generateView($name, $viewType)
     {
-        $stubPath = __DIR__ . '/../Stubs/view.form.stub';
-        $folderName = strtolower($name);
-        $destinationPath = resource_path("views/{$folderName}/{$viewName}.blade.php");
-        $this->buildAndSaveClass($name, $viewName, $stubPath, $destinationPath);
+        $viewDir = resource_path("views/" . strtolower($name));
+        \Illuminate\Support\Facades\File::ensureDirectoryExists($viewDir);
+
+        $destinationPath = $viewDir . "/{$viewType}.blade.php";
+        
+        // Check if the view type is create or edit, and use the form stub
+        $stubFile = in_array($viewType, ['create', 'edit']) 
+            ? 'view.form.stub' 
+            : "view.{$viewType}.stub";
+
+        $stubPath = $this->getStubPath($stubFile);
+
+        if (\Illuminate\Support\Facades\File::exists($stubPath)) {
+            $stubContent = \Illuminate\Support\Facades\File::get($stubPath);
+            
+            $fileContent = str_replace(
+                ['{{ modelName }}', '{{ routeName }}'], 
+                [$name, strtolower($name)], 
+                $stubContent
+            );
+
+            \Illuminate\Support\Facades\File::put($destinationPath, $fileContent);
+            $this->info("Created: {$destinationPath}");
+        }
     }
 
     protected function buildAndSaveClass($name, $className, $stubPath, $destinationPath)
