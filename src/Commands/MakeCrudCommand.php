@@ -145,7 +145,7 @@ class MakeCrudCommand extends Command
 
         if ($all || $this->option('views')) {
             $this->generateErrorComponent();
-            
+
             $this->generateView($name, 'create', $role, $layoutName);
             $this->generateView($name, '_form', $role, $layoutName);
             $this->generateView($name, 'index', $role, $layoutName);
@@ -286,21 +286,27 @@ class MakeCrudCommand extends Command
      */
     protected function appendRoute($name, $role = null)
     {
+        $path = base_path('routes/web.php');
         $modelNameLowerCase = strtolower($name);
 
         if ($role) {
-            $controllerNamespace = "\\App\\Http\\Controllers\\{$role}\\{$name}Controller";
-            $prefix = strtolower($role);
-
-            $routeDefinition = "\nRoute::group(['prefix' => '{$prefix}', 'as' => '{$prefix}.', 'middleware' => ['role:{$role}']], function () {\n" .
-                "    Route::resource('{$modelNameLowerCase}', {$controllerNamespace}::class);\n" .
-                "});\n";
+            $roleLower = strtolower($role);
+            $roleFolder = ucfirst($roleLower); // Forces 'Admin' for the namespace
+            
+            $controller = "\\App\\Http\\Controllers\\{$roleFolder}\\{$name}Controller::class";
+            
+            // Uses $roleLower for the URL prefix/name, $role for middleware, and $controller for the class
+            $route = <<<EOT
+                \nRoute::group(['prefix' => '{$roleLower}', 'as' => '{$roleLower}.', 'middleware' => ['role:{$role}']], function () {
+                    Route::resource('{$modelNameLowerCase}', {$controller});
+                });\n
+            EOT;
         } else {
-            $controllerNamespace = "\\App\\Http\\Controllers\\{$name}Controller";
-            $routeDefinition = "\nRoute::resource('{$modelNameLowerCase}', {$controllerNamespace}::class);\n";
+            $controller = "\\App\\Http\\Controllers\\{$name}Controller::class";
+            $route = "\nRoute::resource('{$modelNameLowerCase}', {$controller});\n";
         }
 
-        File::append(base_path('routes/web.php'), $routeDefinition);
+        \Illuminate\Support\Facades\File::append($path, $route);
         $this->info("Appended route for {$name} to routes/web.php");
     }
 
