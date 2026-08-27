@@ -46,6 +46,16 @@ class DeleteCrudCommand extends Command
         // 4. Delete View Folders
         $viewsDir = resource_path('views');
         $this->deleteDirectory(resource_path("views/{$modelNameLowerCase}"));
+        $requestsDir = app_path('Http/Requests');
+        if (File::exists($requestsDir)) {
+            foreach (File::directories($requestsDir) as $subDir) {
+                $roleStoreRequest = "{$subDir}/Store{$name}Request.php";
+                $roleUpdateRequest = "{$subDir}/Update{$name}Request.php";
+                
+                $this->deleteFile($roleStoreRequest);
+                $this->deleteFile($roleUpdateRequest);
+            }
+        }
 
         if (File::exists($viewsDir)) {
             foreach (File::directories($viewsDir) as $subDir) {
