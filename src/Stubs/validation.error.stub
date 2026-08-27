@@ -1,0 +1,12 @@
+@props(['field'])
+
+@if ($errors->has($field))
+    <div {{ $attributes->merge(['class' => 'text-danger small mt-1']) }}>
+        <ul style="list-style: none; padding-left: 0; margin-bottom: 0;">
+            {{-- Loop through ALL errors for the specified field --}}
+            @foreach ($errors->get($field) as $error)
+                <li>{{ $error }}</li>
+            @endforeach
+        </ul>
+    </div>
+@endif
