@@ -88,8 +88,25 @@ class MakeCrudCommand extends Command
         }
 
         if ($all || $this->option('requests')) {
-            $this->generateFile($name, 'Http/Requests', "Store{$name}Request", 'request.stub');
-            $this->generateFile($name, 'Http/Requests', "Update{$name}Request", 'request.stub');
+            $this->generateBaseRequestFiles();
+
+            $requestPath = $role ? "Http/Requests/{$role}" : "Http/Requests";
+            
+            // Auto-generate basic validation rules based on model $fillable fields
+            $rulesString = '';
+            $modelClass = "\\App\\Models\\{$name}";
+            if (class_exists($modelClass)) {
+                $model = new $modelClass();
+                $fillable = $model->getFillable();
+                foreach ($fillable as $field) {
+                    $rulesString .= "'{$field}' => 'required|string|max:255',\n            ";
+                }
+            } else {
+                $rulesString = "// Define your validation rules here\n";
+            }
+
+            $this->generateFile($name, $requestPath, "Store{$name}Request", 'request.stub', $role, ['{{ rules }}' => $rulesString]);
+            $this->generateFile($name, $requestPath, "Update{$name}Request", 'request.stub', $role, ['{{ rules }}' => $rulesString]);
         }
 
         if ($all || $this->option('controller')) {
@@ -116,7 +133,7 @@ class MakeCrudCommand extends Command
     /**
      * Generate class files from stubs with dynamic replacements.
      */
-    protected function generateFile($name, $path, $className, $stubName, $role = null)
+    protected function generateFile($name, $path, $className, $stubName, $role = null, $extraReplacements = [])
     {
         $stubPath = __DIR__ . '/../Stubs/' . $stubName;
         $destinationPath = app_path("{$path}/{$className}.php");
@@ -136,28 +153,26 @@ class MakeCrudCommand extends Command
 
         $namespace = $role ? "App\Http\Controllers\\{$role}" : "App\Http\Controllers";
         $viewPrefix = $role ? strtolower($role) . '.' : '';
+        $requestNamespace = $role ? "App\Http\Requests\\{$role}" : "App\Http\Requests"; 
 
-        $fileContent = str_replace(
-            [
-                '{{ class }}',
-                '{{ modelName }}',
-                '{{ model }}',
-                '{{ modelNameLowerCase }}',
-                '{{ modelNamePluralLowerCase }}',
-                '{{ namespace }}',
-                '{{ viewPrefix }}'
-            ],
-            [
-                $className,
-                $modelName,
-                $modelName,
-                $modelNameLowerCase,
-                $modelNamePluralLowerCase,
-                $namespace,
-                $viewPrefix
-            ],
-            $stubContent
-        );
+        $search = [
+            '{{ class }}', '{{ modelName }}', '{{ model }}',
+            '{{ modelNameLowerCase }}', '{{ modelNamePluralLowerCase }}',
+            '{{ namespace }}', '{{ viewPrefix }}', '{{ requestNamespace }}'
+        ];
+
+        $replace = [
+            $className, $modelName, $modelName,
+            $modelNameLowerCase, $modelNamePluralLowerCase,
+            $namespace, $viewPrefix, $requestNamespace
+        ];
+        
+        foreach ($extraReplacements as $key => $value) {
+            $search[] = $key;
+            $replace[] = $value;
+        }
+
+        $fileContent = str_replace($search, $replace, $stubContent);
 
         File::put($destinationPath, $fileContent);
         $this->info("Created: {$destinationPath}");
@@ -275,6 +290,17 @@ class MakeCrudCommand extends Command
             File::ensureDirectoryExists(dirname($servicePath));
             File::copy(__DIR__ . '/../Stubs/ui.notification.service.stub', $servicePath);
             $this->info("Generated base file: {$servicePath}");
+        }
+    }
+
+    protected function generateBaseRequestFiles()
+    {
+        $baseRequestPath = app_path('Http/Requests/BaseRequest.php');
+
+        if (!File::exists($baseRequestPath)) {
+            File::ensureDirectoryExists(dirname($baseRequestPath));
+            File::copy(__DIR__ . '/../Stubs/base.request.stub', $baseRequestPath);
+            $this->info("Generated base file: {$baseRequestPath}");
         }
     }
 }
