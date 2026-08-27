@@ -133,8 +133,12 @@ class MakeCrudCommand extends Command
         }
 
         if ($all || $this->option('controller')) {
-            $controllerPath = $role ? "Http/Controllers/{$role}" : "Http/Controllers";
-            $this->generateFile($name, $controllerPath, "{$name}Controller", 'controller.stub', $role);
+            $controllerPath = $roleFolder ? "Http/Controllers/{$roleFolder}" : "Http/Controllers";
+            $requestNamespace = $roleFolder ? "App\Http\Requests\\{$roleFolder}" : "App\Http\Requests";
+
+            $this->generateFile($name, $controllerPath, "{$name}Controller", 'controller.stub', $roleFolder, [
+                '{{ requestNamespace }}' => $requestNamespace
+            ]);
         }
 
         if ($all || $this->option('views')) {

@@ -3,8 +3,8 @@
 namespace {{ namespace }};
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Store{{ modelName }}Request;
-use App\Http\Requests\Update{{ modelName }}Request;
+use {{ requestNamespace }}\Store{{ modelName }}Request;
+use {{ requestNamespace }}\Update{{ modelName }}Request;
 use App\Services\Contracts\{{ modelName }}ServiceInterface;
 use App\Facades\UiNotify;
 
