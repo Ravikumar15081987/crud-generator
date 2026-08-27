@@ -1,0 +1,83 @@
+<?php
+
+namespace App\Traits;
+
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use RuntimeException;
+use Throwable;
+
+class HandlesSafeTransactions
+{
+    protected function executeSafeTransaction(callable $callback, int $attempts = 1, array $options = []): mixed
+    {
+        $defaultOptions = [
+            'log_level' => 'error',
+            'log_rollback_failure' => true,
+            'throw_on_rollback_failure' => true,
+            'custom_error_handler' => null,
+            'connection' => null,
+        ];
+
+        $options = array_merge($defaultOptions, $options);
+        $connection = DB::connection($options['connection']);
+
+        for ($currentAttempt = 1; $currentAttempt <= $attempts; $currentAttempt++) {
+            $connection->beginTransaction();
+
+            try {
+                $result = $callback();
+                $connection->commit();
+
+                return $result;
+
+            } catch (Throwable $e) {
+                $this->handleTransactionFailure($e, $connection, $currentAttempt, $attempts, $options);
+            }
+        }
+
+        throw new RuntimeException('Transaction execution failed. Ensure attempts parameter is greater than 0.');
+    }
+
+    private function handleTransactionFailure(Throwable $e, $connection, int $currentAttempt, int $attempts, array $options): void
+    {
+        try {
+            $connection->rollBack();
+        } catch (Throwable $rollBackException) {
+            if ($options['log_rollback_failure']) {
+                Log::critical('CRITICAL: Transaction failed AND subsequent rollback failed.', [
+                    'original_exception' => get_class($e),
+                    'original_message' => $e->getMessage(),
+                    'rollback_exception' => get_class($rollBackException),
+                    'rollback_message' => $rollBackException->getMessage(),
+                ]);
+            }
+
+            if (is_callable($options['custom_error_handler'])) {
+                $options['custom_error_handler']($e, $rollBackException);
+            }
+
+            if ($options['throw_on_rollback_failure']) {
+                throw new RuntimeException(
+                    'Transaction failed and rollback also failed: '.$rollBackException->getMessage(),
+                    0,
+                    $e
+                );
+            }
+        }
+
+        if ($currentAttempt >= $attempts) {
+            report($e);
+
+            Log::log($options['log_level'], 'Transaction execution failed after '.$attempts.' attempts.', [
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'request_url' => request()->fullUrl(),
+            ]);
+
+            throw $e;
+        }
+    }
+}

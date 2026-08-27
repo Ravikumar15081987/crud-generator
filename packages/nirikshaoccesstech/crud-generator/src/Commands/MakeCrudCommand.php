@@ -113,4 +113,19 @@ class MakeCrudCommand extends Command
         File::append($routeFile, $routeDefinition);
         $this->line("<info>Appended route:</info> {$routeFile}");
     }
+
+    protected function generateTrait()
+    {
+        $stubPath = __DIR__ . '/../Stubs/trait.safe_transaction.stub';
+        $destinationPath = app_path('Traits/HandlesSafeTransactions.php');
+
+        if (!File::exists(dirname($destinationPath))) {
+            File::makeDirectory(dirname($destinationPath), 0755, true);
+        }
+
+        if (!File::exists($destinationPath)) {
+            File::copy($stubPath, $destinationPath);
+            $this->line("<info>Created Trait:</info> {$destinationPath}");
+        }
+    }
 }
