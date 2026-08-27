@@ -45,6 +45,8 @@ class MakeCrudCommand extends Command
             return 1;
         }
 
+        $generateAll = $this->option('all');
+
         // 3. Generate base Facade and Service files if they don't exist
         $this->generateUiNotifyBaseFiles();
 
@@ -142,6 +144,8 @@ class MakeCrudCommand extends Command
         }
 
         if ($all || $this->option('views')) {
+            $this->generateErrorComponent();
+            
             $this->generateView($name, 'create', $role, $layoutName);
             $this->generateView($name, '_form', $role, $layoutName);
             $this->generateView($name, 'index', $role, $layoutName);
@@ -349,5 +353,5 @@ class MakeCrudCommand extends Command
                 $this->error("Could not find the component stub at: {$stubPath}");
             }
         }
-    }
+    }   
 }
