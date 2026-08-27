@@ -128,4 +128,17 @@ class MakeCrudCommand extends Command
             $this->line("<info>Created Trait:</info> {$destinationPath}");
         }
     }
+
+    protected function getStubPath(string $stubName): string
+    {
+        // Check if the user has published custom stubs in their app
+        $publishedPath = base_path("resources/vendor/crud-generator/stubs/{$stubName}");
+
+        if (file_exists($publishedPath)) {
+            return $publishedPath;
+        }
+
+        // Fall back to the default package stubs
+        return __DIR__ . "/../Stubs/{$stubName}";
+    }
 }

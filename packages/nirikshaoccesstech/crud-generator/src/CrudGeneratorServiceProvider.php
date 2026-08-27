@@ -13,5 +13,12 @@ class CrudGeneratorServiceProvider extends ServiceProvider
                 MakeCrudCommand::class,
             ]);
         }
+
+        if ($this->app->runningInConsole()) {
+            // Publish stubs to the application's resource directory
+            $this->publishes([
+                __DIR__ . '/../Stubs' => base_path('resources/vendor/crud-generator/stubs'),
+            ], 'crud-generator-stubs');
+        }
     }
 }
