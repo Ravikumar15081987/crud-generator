@@ -89,7 +89,8 @@ class MakeCrudCommand extends Command
 
         if ($all || $this->option('requests')) {
             $this->generateBaseRequestFiles();
-
+            
+            $roleFolder = $role ? ucfirst(strtolower($role)) : null;
             $requestPath = $roleFolder ? "Http/Requests/{$roleFolder}" : "Http/Requests";
             
             // Auto-generate smart validation rules based on model $fillable and $casts
