@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Store{{ modelName }}Request;
 use App\Http\Requests\Update{{ modelName }}Request;
 use App\Services\Contracts\{{ modelName }}ServiceInterface;
+use App\Facades\UiNotify;
 
 class {{ modelName }}Controller extends Controller
 {
@@ -32,8 +33,9 @@ class {{ modelName }}Controller extends Controller
     {
         $this->service->create($request->validated());
 
-        return redirect()->route('{{ viewPrefix }}{{ modelNameLowerCase }}.index')
-            ->with('success', '{{ modelName }} created successfully.');
+        UiNotify::success('{{ modelName }} created successfully!', 'Success');
+
+        return redirect()->route('{{ viewPrefix }}{{ modelNameLowerCase }}.index');
     }
 
     public function show($id)
@@ -54,15 +56,17 @@ class {{ modelName }}Controller extends Controller
     {
         $this->service->update($id, $request->validated());
 
-        return redirect()->route('{{ viewPrefix }}{{ modelNameLowerCase }}.index')
-            ->with('success', '{{ modelName }} updated successfully.');
+        UiNotify::success('{{ modelName }} updated successfully!', 'Success');
+
+        return redirect()->route('{{ viewPrefix }}{{ modelNameLowerCase }}.index');
     }
 
     public function destroy($id)
     {
         $this->service->delete($id);
 
-        return redirect()->route('{{ viewPrefix }}{{ modelNameLowerCase }}.index')
-            ->with('success', '{{ modelName }} deleted successfully.');
+        UiNotify::success('{{ modelName }} deleted successfully!', 'Success');
+
+        return redirect()->route('{{ viewPrefix }}{{ modelNameLowerCase }}.index');
     }
 }

@@ -1,4 +1,0 @@
-{{-- resources/views/{{ modelVariable }}/form.blade.php --}}
-<div>
-    <!-- Generate {{ class }} form for {{ model }} here -->
-</div>

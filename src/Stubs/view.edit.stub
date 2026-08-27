@@ -1,4 +1,5 @@
-@extends('layouts/layoutMaster')
+@extends('{{ layoutName }}')
+
 @section('title', 'Edit {{ modelName }}')
 
 @section('content')
