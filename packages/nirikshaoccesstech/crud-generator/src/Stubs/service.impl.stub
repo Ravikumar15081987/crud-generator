@@ -1,0 +1,16 @@
+<?php
+namespace App\Services\Implementation;
+
+use App\Services\Contracts\{{ model }}ServiceInterface;
+use App\Repositories\Contracts\{{ model }}RepositoryInterface;
+
+class {{ class }} implements {{ model }}ServiceInterface
+{
+    public function __construct(protected {{ model }}RepositoryInterface $repository) {}
+
+    public function getAll() { return $this->repository->all(); }
+    public function getById($id) { return $this->repository->find($id); }
+    public function create(array $data) { return $this->repository->create($data); }
+    public function update($id, array $data) { return $this->repository->update($id, $data); }
+    public function delete($id) { return $this->repository->delete($id); }
+}

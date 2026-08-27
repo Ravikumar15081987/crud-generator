@@ -1,0 +1,45 @@
+<?php
+namespace App\Http\Controllers;
+
+use App\Http\Requests\Store{{ model }}Request;
+use App\Http\Requests\Update{{ model }}Request;
+use App\Services\Contracts\{{ model }}ServiceInterface;
+
+class {{ class }} extends Controller
+{
+    public function __construct(protected {{ model }}ServiceInterface $service) {}
+
+    public function index() {
+        ${{ modelVariable }}s = $this->service->getAll();
+        return view('{{ modelVariable }}.index', compact('{{ modelVariable }}s'));
+    }
+
+    public function create() {
+        return view('{{ modelVariable }}.create');
+    }
+
+    public function store(Store{{ model }}Request $request) {
+        $this->service->create($request->validated());
+        return redirect()->route('{{ modelVariable }}s.index')->with('success', 'Created successfully.');
+    }
+
+    public function show($id) {
+        ${{ modelVariable }} = $this->service->getById($id);
+        return view('{{ modelVariable }}.show', compact('{{ modelVariable }}'));
+    }
+
+    public function edit($id) {
+        ${{ modelVariable }} = $this->service->getById($id);
+        return view('{{ modelVariable }}.edit', compact('{{ modelVariable }}'));
+    }
+
+    public function update(Update{{ model }}Request $request, $id) {
+        $this->service->update($id, $request->validated());
+        return redirect()->route('{{ modelVariable }}s.index')->with('success', 'Updated successfully.');
+    }
+
+    public function destroy($id) {
+        $this->service->delete($id);
+        return redirect()->route('{{ modelVariable }}s.index')->with('success', 'Deleted successfully.');
+    }
+}
