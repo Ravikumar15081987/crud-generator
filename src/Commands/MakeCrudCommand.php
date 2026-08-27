@@ -38,6 +38,16 @@ class MakeCrudCommand extends Command
             return 1;
         }
 
+        // 2. Check for devrabiul/laravel-toaster-magic requirement
+        if (!class_exists(\Devrabiul\ToastMagic\Facades\ToastMagic::class)) {
+            $this->error('Error: devrabiul/laravel-toaster-magic package is required for UI notifications.');
+            $this->warn('Please install it first using: composer require devrabiul/laravel-toaster-magic');
+            return 1;
+        }
+
+        // 3. Generate base Facade and Service files if they don't exist
+        $this->generateUiNotifyBaseFiles();
+
         $name = ucfirst($this->argument('name'));
 
         // 2. Fetch roles from DB and ask user to select or enter custom role
@@ -245,5 +255,26 @@ class MakeCrudCommand extends Command
 
         File::append(base_path('routes/web.php'), $routeDefinition);
         $this->info("Appended route for {$name} to routes/web.php");
+    }
+
+    /**
+     * Create the UiNotify Facade and Service if they don't already exist.
+     */
+    protected function generateUiNotifyBaseFiles()
+    {
+        $facadePath = app_path('Facades/UiNotify.php');
+        $servicePath = app_path('Services/UiNotificationService.php');
+
+        if (!File::exists($facadePath)) {
+            File::ensureDirectoryExists(dirname($facadePath));
+            File::copy(__DIR__ . '/../Stubs/ui.notify.facade.stub', $facadePath);
+            $this->info("Generated base file: {$facadePath}");
+        }
+
+        if (!File::exists($servicePath)) {
+            File::ensureDirectoryExists(dirname($servicePath));
+            File::copy(__DIR__ . '/../Stubs/ui.notification.service.stub', $servicePath);
+            $this->info("Generated base file: {$servicePath}");
+        }
     }
 }

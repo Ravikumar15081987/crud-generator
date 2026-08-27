@@ -1,0 +1,28 @@
+<?php
+
+namespace App\Services;
+
+use Devrabiul\ToastMagic\Facades\ToastMagic;
+
+class UiNotificationService
+{
+    public function success(string $message, string $title = 'Success'): void
+    {
+        ToastMagic::success($message, $title);
+    }
+
+    public function error(string $message, string $title = 'Error'): void
+    {
+        ToastMagic::error($message, $title);
+    }
+
+    public function info(string $message, string $title = 'Info'): void
+    {
+        ToastMagic::info($message, $title);
+    }
+
+    public function warning(string $message, string $title = 'Warning'): void
+    {
+        ToastMagic::warning($message, $title);
+    }
+}

@@ -30,4 +30,15 @@ class CrudGeneratorServiceProvider extends ServiceProvider
         }
 
     }
+    
+    public function register()
+    {
+        // Bind the generated UiNotificationService to the 'ui.notify' alias
+        $this->app->singleton('ui.notify', function ($app) {
+            $serviceClass = '\\App\\Services\\UiNotificationService';
+            if (class_exists($serviceClass)) {
+                return new $serviceClass();
+            }
+        });
+    }
 }

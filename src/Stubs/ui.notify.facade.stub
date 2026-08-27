@@ -1,0 +1,18 @@
+<?php
+
+namespace App\Facades;
+
+use Illuminate\Support\Facades\Facade;
+
+/**
+ * @method static void success(string $message, string $title = 'Success')
+ * @method static void error(string $message, string $title = 'Error')
+ * @method static void info(string $message, string $title = 'Info')
+ */
+class UiNotify extends Facade
+{
+    protected static function getFacadeAccessor(): string
+    {
+        return 'ui.notify';
+    }
+}
