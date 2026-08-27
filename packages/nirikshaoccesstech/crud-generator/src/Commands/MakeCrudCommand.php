@@ -126,7 +126,7 @@ class MakeCrudCommand extends Command
         if (!File::exists($destinationPath)) {
             File::copy($stubPath, $destinationPath);
             $this->line("<info>Created Trait:</info> {$destinationPath}");
-        }
+        }  
     }
 
     protected function getStubPath(string $stubName): string
