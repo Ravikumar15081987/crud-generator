@@ -3,6 +3,7 @@ namespace NirikshaOccesstech\CrudGenerator;
 
 use Illuminate\Support\ServiceProvider;
 use NirikshaOccesstech\CrudGenerator\Commands\MakeCrudCommand;
+use NirikshaOccesstech\CrudGenerator\Commands\DeleteCrudCommand;
 
 class CrudGeneratorServiceProvider extends ServiceProvider
 {
@@ -11,6 +12,7 @@ class CrudGeneratorServiceProvider extends ServiceProvider
         if ($this->app->runningInConsole()) {
             $this->commands([
                 MakeCrudCommand::class,
+                DeleteCrudCommand::class
             ]);
         }
 
@@ -24,6 +26,7 @@ class CrudGeneratorServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__ . '/Stubs/validation.error.stub' => resource_path('views/components/field-error.blade.php'),
             ], 'crud-generator-components');
+            
         }
 
     }
