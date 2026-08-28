@@ -17,9 +17,10 @@ class CrudGeneratorServiceProvider extends ServiceProvider
         }
 
         if ($this->app->runningInConsole()) {
-            // Publish stubs to the application's resource directory
+            // Publish all stubs to the application's resource/base directory
             $this->publishes([
                 __DIR__ . '/../Stubs' => base_path('resources/vendor/crud-generator/stubs'),
+                __DIR__ . '/../Stubs/data-table.attribute.stub' => base_path('stubs/crud-generator/data-table.attribute.stub'),
             ], 'crud-generator-stubs');
 
             // Allow publishing the component stub manually if needed
@@ -30,7 +31,7 @@ class CrudGeneratorServiceProvider extends ServiceProvider
         }
 
     }
-    
+
     public function register()
     {
         // Bind the generated UiNotificationService to the 'ui.notify' alias

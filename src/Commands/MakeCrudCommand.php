@@ -523,6 +523,9 @@ class MakeCrudCommand extends Command
 
     protected function generateBaseDataTableFiles()
     {
+        // Generate DataTableColumn Attribute
+        $this->copyStubToApp('data-table.attribute.stub', app_path('Attributes/DataTableColumn.php'));
+        
         // Generate ColumnGenerator
         $this->copyStubToApp('data-table.column-generator.stub', app_path('DataTable/ColumnGenerator.php'));
         

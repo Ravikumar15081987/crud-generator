@@ -1,6 +1,6 @@
 @extends('{{ layoutName }}')
 
-@section('title', 'Manage {{ modelName }}')
+@section('title', 'Manage Index - {{ modelName }}')
 
 @section('content')
     <div class="container-fluid py-4">

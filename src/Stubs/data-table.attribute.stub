@@ -1,0 +1,19 @@
+<?php
+
+namespace App\Attributes;
+
+use Attribute;
+
+#[Attribute(Attribute::IS_REPEATABLE | Attribute::TARGET_CLASS)]
+class DataTableColumn
+{
+    public function __construct(
+        public string $field,
+        public string $label,
+        public bool $searchable = false,
+        public bool $sortable = false,
+        public bool $hidden = false,
+        public bool $visible = true,
+        public ?string $view = null,
+    ) {}
+}
