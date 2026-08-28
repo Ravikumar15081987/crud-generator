@@ -1,0 +1,92 @@
+<?php
+
+namespace App\Livewire;
+
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Session;
+use Livewire\Component;
+
+class DataTableFilters extends Component
+{
+  // Holds the dynamic filter values (e.g., ['vendor_id' => 12, 'status' => 'pending'])
+  public array $filters = [];
+
+  // Holds the dynamic configuration for all filters (labels, field names, options)
+  public array $filtersConfig = [];
+
+  // ID of the target DataTable instance
+  public string $datatableId;
+
+  // We use a query string entry for 'filters' so they persist in the URL
+  //  protected $queryString = [
+  //    'filters' => ['except' => []],
+  //  ];
+
+  protected $queryString = [];
+
+  /**
+   * Accepts the ID of the target DataTable and the dynamic configuration array.
+   * @param string $datatableId The Livewire ID of the target DataTable.
+   * @param array $config Configuration array defining the available filters.
+   */
+  public function mount(string $datatableId, array $config)
+  {
+    $this->datatableId = $datatableId;
+    $this->filtersConfig = $config;
+
+    // --- NEW: Read DataTable state from Session ---
+    $sessionId = 'datatable_state_' . $datatableId; // Use the target DataTable's session ID
+    $sessionState = Session::get($sessionId, []);
+
+    // Set the filters property from the session, defaulting to an empty array if not found
+    //$this->filters = $sessionState['filters'] ?? $this->filters;
+
+    // This line ensures the UI component loads with empty filters,
+    // relying on the DataTable component to clear the session first.
+    $this->filters = $sessionState['filters'] ?? [];
+
+    // Ensure $this->filters is an array
+    if (!is_array($this->filters)) {
+      $this->filters = [];
+    }
+  }
+
+  /**
+   * Emits the current filters to the target DataTable component.
+   */
+  public function applyFilters()
+  {
+    // Dispatch the event globally, including the target ID as part of the data.
+    // We remove the .to('#...') which causes Livewire to look for a component with that name.
+    $this->dispatch('applyTableFilters', filters: $this->filters, datatableId: $this->datatableId);
+
+    Log::debug("DataTableFilters: Dispatched 'applyTableFilters' globally with ID {$this->datatableId}", ['filters' => $this->filters]);
+  }
+
+  /**
+   * Clears all filters and reloads the data via an event.
+   */
+  public function resetFilters()
+  {
+    // 1. Clear all filters property
+    $this->filters = [];
+
+    // 2. Emit a client-side event to trigger visual cleanup in the browser
+    $this->dispatch('filtersResetVisuals'); // <-- NEW: Client-side event for JS cleanup
+
+    // 3. Emit the application event with empty filters to reload the DataTable
+    $this->applyFilters();
+
+    Log::debug("DataTableFilters: Dispatched reset filters to #{$this->datatableId}");
+  }
+
+  // We don't need a separate updatedFilters method if we use wire:model.live
+  // and rely on the explicit applyFilters button.
+  // If you want auto-filtering on select change, you would remove the filter button
+  // and call $this->applyFilters() in updatedFilters.
+
+  public function render()
+  {
+    return view('livewire.data-table-filters');
+  }
+}

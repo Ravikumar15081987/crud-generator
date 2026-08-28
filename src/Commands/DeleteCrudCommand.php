@@ -10,12 +10,13 @@ class DeleteCrudCommand extends Command
 {
     protected $signature = 'make:crud-delete {name : The name of the model}';
 
-    protected $description = 'Delete all generated CRUD files, views, and routes for a model';
+    protected $description = 'Delete all generated CRUD files, views, configs, and routes for a model';
 
     public function handle()
     {
         $name = ucfirst($this->argument('name'));
         $modelNameLowerCase = strtolower($name);
+        $modelPluralKebab = Str::kebab(Str::plural($name));
 
         if (!$this->confirm("Are you sure you want to delete all generated CRUD layers for '{$name}'?")) {
             $this->info('Operation cancelled.');
@@ -43,9 +44,6 @@ class DeleteCrudCommand extends Command
         $this->deleteFile(app_path("Http/Requests/Store{$name}Request.php"));
         $this->deleteFile(app_path("Http/Requests/Update{$name}Request.php"));
 
-        // 4. Delete View Folders
-        $viewsDir = resource_path('views');
-        $this->deleteDirectory(resource_path("views/{$modelNameLowerCase}"));
         $requestsDir = app_path('Http/Requests');
         if (File::exists($requestsDir)) {
             foreach (File::directories($requestsDir) as $subDir) {
@@ -57,16 +55,36 @@ class DeleteCrudCommand extends Command
             }
         }
 
+        // 4. Delete View Folders (Both standard lowercase and new kebab-plural for DataTables)
+        $viewsDir = resource_path('views');
+        $this->deleteDirectory(resource_path("views/{$modelNameLowerCase}"));
+        $this->deleteDirectory(resource_path("views/{$modelPluralKebab}"));
+
         if (File::exists($viewsDir)) {
             foreach (File::directories($viewsDir) as $subDir) {
                 $roleViewDir = "{$subDir}/{$modelNameLowerCase}";
+                $roleDataTableDir = "{$subDir}/{$modelPluralKebab}";
+                
                 if (File::isDirectory($roleViewDir)) {
                     $this->deleteDirectory($roleViewDir);
+                }
+                if (File::isDirectory($roleDataTableDir)) {
+                    $this->deleteDirectory($roleDataTableDir);
                 }
             }
         }
 
-        // 5. Remove Appended Routes from routes/web.php
+        // 5. Delete DataTable Config Files
+        $this->deleteFile(config_path("datatable/default/{$modelPluralKebab}.php"));
+        $configDir = config_path('datatable');
+        if (File::exists($configDir)) {
+            foreach (File::directories($configDir) as $subDir) {
+                $roleConfigPath = "{$subDir}/{$modelPluralKebab}.php";
+                $this->deleteFile($roleConfigPath);
+            }
+        }
+
+        // 6. Remove Appended Routes from routes/web.php
         $this->removeAppendedRoute($name);
 
         $this->info("CRUD cleanup for '{$name}' completed successfully.");

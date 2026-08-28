@@ -1,63 +1,124 @@
-<<<<<<< HEAD
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+🚀 Laravel Advanced CRUD Generator
+A powerful, developer-friendly package to instantly scaffold complete, enterprise-grade CRUD architecture in Laravel. This package generates Controllers, Service layers, Repository layers, smart Form Requests, Blade Views (or API JSON responses), and Routes, fully integrated with role-based namespaces.
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+⚠️ Prerequisites
+This package relies on two specific dependencies for role management and UI notifications:
 
-## About Laravel
+🔒 Spatie Laravel Permission (spatie/laravel-permission)
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+🍞 ToastMagic (devrabiul/laravel-toaster-magic)
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+Note: Make sure your Laravel project has these installed and configured before generating CRUD layers.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+📦 Installation
+Install the package via Composer:
 
-## Learning Laravel
+Bash
+composer require nirikshaoccesstech/crud-generator --dev
+(If the package is in a private repository, ensure your composer.json is configured with the correct VCS repository URL).
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+🛠️ Core Usage
+The primary command to scaffold a new CRUD module is make:crud.
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+1️⃣ Prepare Your Model
+Before running the generator, ensure your model exists and has its $fillable and $casts properties defined. The generator reads these to automatically build smart validation rules and intelligent HTML forms.
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+PHP
+namespace App\Models;
 
-## Agentic Development
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+class Property extends Model
+{
+    use SoftDeletes;
 
-```bash
-composer require laravel/boost --dev
+    protected $fillable = [
+        'title',
+        'description',
+        'category_id',
+        'image',
+        'is_active',
+    ];
 
-php artisan boost:install
-```
+    protected $casts = [
+        'is_active' => 'boolean',
+    ];
+}
+2️⃣ Run the Generator
+To generate all layers (Controller, Service, Repository, Requests, Views, Routes), run:
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Bash
+php artisan make:crud Property --all
+💬 Interactive Prompts:
+During execution, the console will ask two questions:
 
-## Contributing
+👤 Role Selection: Select a role (e.g., Admin, Manager, or None). If you select a role, the package will group the Controllers and Requests into a dedicated namespace (e.g., App\Http\Controllers\Admin) and wrap the generated route in role middleware.
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+🎨 Layout Name: Provide the name of the Blade layout your views should extend (e.g., layouts.app).
 
-## Code of Conduct
+⚙️ Command Options
+You can selectively generate specific layers by passing targeted flags instead of --all:
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+📄 --controller: Generates only the Controller.
 
-## Security Vulnerabilities
+⚙️ --service: Generates the Service Interface and Implementation.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+🗄️ --repository: Generates the Repository Interface and Implementation.
 
-## License
+🖥️ --views: Generates the Blade views (index, create, edit, show, _form).
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
-=======
-# crud-generator
-A Laravel Artisan package to instantly scaffold a clean Repository-Service architecture. Generates Controllers, Services, Repositories, Form Requests, Blade views, and routes.
->>>>>>> 4294fbc7881528c26f940ff03e858f4a7725043e
+🛡️ --requests: Generates Store and Update Form Requests.
+
+🔗 --route: Appends the resource route to routes/web.php.
+
+🔌 --api: Skips Blade views, generates an API-formatted Controller (returning JsonResponse), and appends to routes/api.php.
+
+🖼️ --media: Adds Spatie MediaLibrary placeholders if your model uses the InteractsWithMedia trait.
+
+💡 Example: Headless API Generation
+
+Bash
+php artisan make:crud Project --api --all
+This skips all Blade scaffolding and perfectly structures the module for REST API consumption.
+
+🧠 Intelligent Features
+🎯 Smart Validation Rules
+The package reads your model's $casts and naming conventions to generate accurate rules in App\Http\Requests.
+
+🟢 If a field is cast to boolean, or starts with is_ / has_, it applies 'boolean'.
+
+🔢 If a field ends in _id, it applies 'integer'.
+
+📝 Standard fields receive 'string|max:255', but the length limit is dynamically removed for text areas like description or content.
+
+🔔 Custom BaseRequest & UiNotify Integration
+Generated form requests extend a custom BaseRequest class (automatically generated if missing). This class catches ValidationException and AuthorizationException, routing them through UiNotify (ToastMagic) to flash beautiful, non-intrusive UI error toasts without flooding your application logs with simple user input errors.
+
+✨ Smart Form Generation
+When generating Blade views, the _form.blade.php file applies logic based on your $fillable array:
+
+🔗 Foreign Keys: Fields ending in _id (e.g., category_id) automatically generate a <select> dropdown populated with App\Models\Category::all().
+
+📁 File Uploads: Fields named image, document, or avatar automatically generate <input type="file">.
+
+🔴 UI Components: If missing, the package automatically publishes a reusable <x-field-error> Blade component to handle inline validation states elegantly.
+
+🗑️ Rollback & Cleanup
+If you make a mistake or want to remove a generated module completely, use the delete command:
+
+Bash
+php artisan make:crud-delete Property
+This command will prompt for confirmation and cleanly erase:
+
+❌ The Controller (including inside role-based subdirectories).
+
+❌ The Service Interface and Implementation.
+
+❌ The Repository Interface and Implementation.
+
+❌ The Form Requests (Store and Update).
+
+❌ The dedicated View directory.
+
+❌ The appended lines in routes/web.php or routes/api.php.

@@ -1,0 +1,1175 @@
+<?php
+
+namespace App\Livewire;
+
+use App\DataTable\ColumnGenerator;
+use Illuminate\Database\Eloquent\Builder;
+use Devrabiul\ToastMagic\Facades\ToastMagic;
+use Exception;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Session;
+use Livewire\Component;
+use Symfony\Component\HttpFoundation\RedirectResponse;
+
+class DataTable extends Component
+{
+    public $model;
+    public $columns;
+    public $perPage = 10;
+    public $page = 1;
+    public $totalRecords;
+    public $totalPages;
+    public $data = [];
+    public $search = '';
+    public $sortBy = null;
+    public $sortDirection = 'asc';
+    public $searchableColumns = []; // Now stores processed, flat fields
+    public $hiddenColumns = []; // Stores field names of columns that ARE hidden
+    public $selectedColumns = []; // Stores field_name => boolean (true if selected/visible, false if not)
+    public $tempSelectedColumns = []; // Used for the dropdown state
+    public $id; // Added for unique component ID
+    protected $queryString = [
+        'constraint' => ['except' => null]
+    ];
+    public $originalColumns = []; // Stores the raw column definitions from ColumnGenerator
+    public $isLoading = false;
+    public $configPath = null; // Custom config path for the DataTable
+    public $constraint = null;
+    public array $filters = [];
+    public array $onRowClick = [];
+
+    // Internal caches for performance
+    protected array $cachedTableColumns = [];
+    protected array $cachedVirtualSearchFields = [];
+    protected array $cachedColumnFields = []; // Stores just the 'field' values from $this->columns
+
+    protected $listeners = [
+        'refreshDatatable' => '$refresh',
+        'refreshComponent' => '$refresh',
+        'refreshDatatableById' => 'refreshSpecificDatatable',
+        'refreshTable' => '$refresh',
+        'applyTableFilters' => 'setAndFilter',
+        'forceRefresh' => 'forceRerender',
+    ];
+
+    public function refreshSpecificDatatable($datatableId = null): void
+    {
+        if ($datatableId === null || $datatableId === $this->id) {
+            $this->loadData();
+        }
+    }
+
+    /**
+     * Sends a notification event to the browser.
+     * @param string $type success, error, warning, info
+     * @param string $message The message content
+     * @param string $title The notification title (optional)
+     */
+    protected function notify(string $type, string $message, string $title = ''): void
+    {
+        if ($type === 'error') {
+            $options = [];
+            if (!empty($title)) {
+                $options['title'] = $title;
+            }
+            ToastMagic::error($message);
+            Log::error($message, $options);
+        } else {
+            $this->dispatch('show-notification', [
+                'type' => $type,
+                'title' => $title,
+                'message' => $message,
+            ]);
+        }
+    }
+
+    public function getModelFromRoute(): ?string
+    {
+        $route = request()->route();
+        if (!$route) {
+            Log::debug('DataTable getModelFromRoute - No route found');
+            return null;
+        }
+
+        try {
+            $controller = $route->getController();
+            if (!$controller) {
+                //                Log::debug('DataTable getModelFromRoute - Route has no controller (likely a closure).', [
+                //                    'route' => $route->getName(),
+                //                    'uri' => $route->uri(),
+                //                ]);
+                return null;
+            }
+
+            $controllerClass = get_class($controller);
+            $controllerName = class_basename($controllerClass);
+            $modelName = str_replace('Controller', '', $controllerName);
+            $modelClass = "App\\Models\\{$modelName}";
+            return class_exists($modelClass) ? $modelClass : null;
+        } catch (Exception $e) {
+            Log::error('Error resolving model from route:', [
+                'exception' => $e->getMessage(),
+                'route' => $route->getName(),
+                'uri' => $route->uri(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Transforms raw column configurations into a standardized format for the component.
+     * pre-caches searchable fields and initial visibility.
+     *
+     * @param array $rawColumns
+     * @return array
+     */
+    protected function transformColumns(array $rawColumns): array
+    {
+        $transformedColumns = [];
+        $this->originalColumns = $rawColumns; // Keep a copy of original for reset
+
+        // If no columns are defined, return an empty array
+        if (empty($rawColumns) || !is_array($rawColumns)) {
+//            Log::warning('No columns defined in configuration', [
+//                'configPath' => $this->configPath,
+//                'rawColumns' => $rawColumns
+//            ]);
+            return [];
+        }
+
+        foreach ($rawColumns as $column) {
+            // Skip if column is not an array
+            if (!is_array($column)) {
+                Log::warning('Invalid column definition', [
+                    'column' => $column
+                ]);
+                continue;
+            }
+            $transformedColumn = [
+                'label' => $column['label'] ?? '',
+                'sortable' => $column['sortable'] ?? true,
+                'searchable' => $column['searchable'] ?? true,
+                'hide' => $column['hide'] ?? false, // 'hide' property determines initial hidden state
+                'with' => $column['with'] ?? [],
+            ];
+
+            // --- CRITICAL FIX: DYNAMIC ACCESS CHECK (Non-Hardcoded) ---
+            if (isset($column['access_check']) && is_string($column['access_check'])) {
+                $checkMethodName = $column['access_check'];
+
+                // If checkColumnAccess returns TRUE, it means the user should NOT see the column.
+                if ($this->checkColumnAccess($checkMethodName)) {
+                    $transformedColumn['hide'] = true; // Force hide the column, overriding the static 'hide'
+                    //Log::info('Column access denied via check', ['field' => $column['field'] ?? 'N/A', 'check' => $checkMethodName]);
+                }
+            }
+            // --- END DYNAMIC ACCESS CHECK ---
+
+            if (isset($column['field'])) {
+                $transformedColumn['field'] = $column['field'];
+                $this->cachedColumnFields[] = $column['field']; // Cache just the field names
+
+                // Handle relationship definition explicitly or via dot notation
+                if (isset($column['relationship'])) {
+                    $transformedColumn['relationship'] = $column['relationship'];
+                    $transformedColumn['display_field'] = $column['relationship']['field'] ?? 'name';
+                } elseif (Str::contains($column['field'], '.')) {
+                    $parts = explode('.', $column['field'], 2);
+                    $transformedColumn['relationship'] = [
+                        'name' => $parts[0],
+                        'field' => $parts[1] ?? 'name'
+                    ];
+                    $transformedColumn['display_field'] = $parts[1] ?? 'name';
+                }
+            }
+
+            if (isset($column['view'])) {
+                $transformedColumn['view'] = $column['view'];
+            }
+
+            if (isset($column['data']) && is_callable($column['data'])) {
+                $transformedColumn['has_data_callback'] = true;
+            }
+            $transformedColumns[] = $transformedColumn;
+        }
+
+        $this->searchableColumns = $this->getSearchableFieldsFromColumns($transformedColumns);
+
+        return $transformedColumns;
+    }
+
+    /**
+     * Retrieves column data, handling callbacks and relationships.
+     *
+     * @param string $field The field name (e.g., 'name', 'creator.name')
+     * @param mixed $row The data row (Eloquent model or array)
+     * @return string The display value
+     */
+    public function getColumnData($field, $row): string
+    {
+        // Enable debug logging
+        $debug = false;
+        $debugInfo = [];
+        $debugInfo[] = "Field: $field";
+
+        // Find the original column definition using its field name
+        $originalColumn = collect($this->originalColumns)->firstWhere('field', $field);
+
+        // If a custom data callback is defined, use it
+        if ($originalColumn && isset($originalColumn['data']) && is_callable($originalColumn['data'])) {
+            try {
+                return $originalColumn['data']($row);
+            } catch (Exception $e) {
+                Log::error("Error executing column data callback for field {$field}: " . $e->getMessage());
+                return 'Error';
+            }
+        }
+
+        // Convert the row to an array to check available keys
+        $rowArray = is_object($row) ? $row->toArray() : (array) $row;
+        $debugInfo[] = "Available keys in row: " . implode(', ', array_keys($rowArray));
+
+        // Check for relationship fields in the row
+        $snakeField = Str::snake($field);
+
+        // First check if the field exists as is
+        if (array_key_exists($field, $rowArray)) {
+            $debugInfo[] = "Field found as: $field";
+        }
+        // Then check the snake_case version
+        elseif (array_key_exists($snakeField, $rowArray)) {
+            $debugInfo[] = "Using snake_case field name: $snakeField";
+            $field = $snakeField;
+        }
+        // If not found, check if it might be a relationship
+        elseif (is_object($row) && method_exists($row, $field)) {
+            $debugInfo[] = "Found possible relationship method: $field";
+            // Keep the field as is to be handled by the relationship logic below
+        }
+
+        // Handle relationship fields (e.g., 'masterProducts.name' or 'masterProducts.category.name')
+        if (Str::contains($field, '.')) {
+            $value = $row;
+            $parts = explode('.', $field);
+            $debugInfo[] = "Processing nested field: " . implode(' -> ', $parts);
+
+            foreach ($parts as $i => $part) {
+                $debugInfo[] = "  Part {$i}: {$part}";
+
+                if ($value === null) {
+                    $debugInfo[] = "  Value is null, breaking";
+                    break;
+                }
+
+                // Check if the part is a relationship method
+                $isRelationship = false;
+                if (is_object($value) && method_exists($value, $part)) {
+                    try {
+                        $relation = $value->$part();
+                        if (method_exists($relation, 'getResults')) {
+                            $debugInfo[] = "  Found relationship method: $part";
+                            $value = $relation->getResults();
+                            $isRelationship = true;
+                            $debugInfo[] = "  Relationship result type: " . (is_object($value) ? get_class($value) : gettype($value));
+                            continue;
+                        }
+                    } catch (\Exception $e) {
+                        $debugInfo[] = "  Error accessing relationship $part: " . $e->getMessage();
+                    }
+                }
+
+                if (is_object($value)) {
+                    $debugInfo[] = "  Value is an object of type: " . get_class($value);
+
+                    // First try to get the relationship if it exists
+                    if (method_exists($value, $part) && !in_array($part, ['getAttribute', 'getAttributes', 'getRelationValue'])) {
+                        $debugInfo[] = "  Calling relationship method ->{$part}()";
+                        $relation = $value->$part();
+                        $value = $relation->getResults();
+                        $debugInfo[] = "  Relationship result type: " . (is_object($value) ? get_class($value) : gettype($value));
+                    }
+                    // Then try getAttribute
+                    elseif (method_exists($value, 'getAttribute')) {
+                        $debugInfo[] = "  Using getAttribute('{$part}')";
+                        $value = $value->getAttribute($part);
+                    }
+                    // Then check for direct property access
+                    elseif (isset($value->$part)) {
+                        $debugInfo[] = "  Accessing property ->{$part}";
+                        $value = $value->$part;
+                    }
+                    // Then check for method call
+                    elseif (method_exists($value, $part)) {
+                        $debugInfo[] = "  Calling method ->{$part}()";
+                        $value = $value->$part();
+                    }
+                    // Finally, try to get the relation value if it's a model
+                    elseif (method_exists($value, 'getRelationValue')) {
+                        $debugInfo[] = "  Trying getRelationValue('{$part}')";
+                        $value = $value->getRelationValue($part);
+                        $debugInfo[] = "  getRelationValue result: " . (is_object($value) ? get_class($value) : gettype($value));
+                    }
+                    else {
+                        $debugInfo[] = "  Property/method '{$part}' not found";
+                        $value = null;
+                    }
+                } elseif (is_array($value) && array_key_exists($part, $value)) {
+                    $debugInfo[] = "  Accessing array key [{$part}]";
+                    $value = $value[$part];
+                } elseif (is_array($value)) {
+                    $snakePart = Str::snake($part); // <-- CRITICAL: Check the snake_case version of the relation name
+
+                    if (array_key_exists($part, $value)) {
+                        $debugInfo[] = "  Accessing array key [{$part}]";
+                        $value = $value[$part];
+                    } elseif (array_key_exists($snakePart, $value)) { // <-- FIX: Prioritize snake_case key
+                        $debugInfo[] = "  Accessing array key [{$snakePart}] (snake_case)";
+                        $value = $value[$snakePart];
+                    } else {
+                        $debugInfo[] = "  Value is not an object or array with key '{$part}' or '{$snakePart}'";
+                        $value = null;
+                    }
+                } else {
+                    $debugInfo[] = "  Value is not an object or array with key '{$part}'";
+                    $value = null;
+                }
+
+                $debugInfo[] = "  Value after part '{$part}': " . (is_object($value) ? get_class($value) : (is_array($value) ? 'array' : (string)$value));
+
+                if ($value === null) {
+                    $debugInfo[] = "  Value is null after part '{$part}', breaking";
+                    break;
+                }
+            }
+
+            if ($debug) {
+                Log::debug("getColumnData debug for $field", $debugInfo);
+            }
+
+            return $value ?? 'N/A';
+        }
+
+        // Direct field access
+        if (is_object($row)) {
+            // First try to get as a relationship if it exists
+            if (method_exists($row, $field) && !in_array($field, ['getAttribute', 'getAttributes', 'getRelationValue', 'getRelations'])) {
+                $debugInfo = [];
+                $debugInfo[] = "  Calling direct relationship method ->{$field}()";
+                try {
+                    $relation = $row->$field();
+                    $value = $relation->getResults();
+                    $debugInfo[] = "  Relationship result type: " . (is_object($value) ? get_class($value) : gettype($value));
+
+                    if ($debug) {
+                        Log::debug("Direct relationship access for {$field}", $debugInfo);
+                    }
+
+                    if (is_object($value) && method_exists($value, 'getAttribute')) {
+                        return $value->getAttribute($value->getKeyName()) ?? 'N/A';
+                    }
+                    return $value ?? 'N/A';
+                } catch (Exception $e) {
+                    if ($debug) {
+                        Log::error("Error accessing relationship {$field}: " . $e->getMessage(), [
+                            'exception' => $e
+                        ]);
+                    }
+                }
+            }
+
+            // Then try getAttribute
+            if (method_exists($row, 'getAttribute')) {
+                $value = $row->getAttribute($field);
+//                if ($debug) {
+//                    Log::debug("Direct field access (getAttribute) for $field", [
+//                        'value' => $value,
+//                        'row_class' => get_class($row),
+//                        'has_relation' => method_exists($row, $field) ? 'yes' : 'no',
+//                        'is_relation' => method_exists($row, 'relationLoaded') && $row->relationLoaded($field) ? 'yes' : 'no',
+//                        'attributes' => $row->getAttributes(),
+//                        'relations' => method_exists($row, 'getRelations') ? array_keys($row->getRelations()) : []
+//                    ]);
+//                }
+                return $value ?? 'N/A';
+            }
+            // Then check for direct property access
+            elseif (isset($row->$field)) {
+                return $row->$field ?? 'N/A';
+            }
+        } elseif (is_array($row) && array_key_exists($field, $row)) {
+            return $row[$field] ?? 'N/A';
+        }
+
+        if ($debug) {
+            Log::info("Field not found: $field", [
+                'row_type' => is_object($row) ? get_class($row) : gettype($row),
+                'available_fields' => is_object($row) ? get_object_vars($row) : (is_array($row) ? array_keys($row) : []),
+                'model_attributes' => is_object($row) && method_exists($row, 'getAttributes') ? $row->getAttributes() : []
+            ]);
+        }
+
+        return 'N/A';
+    }
+
+
+
+    public function mount($model = null, $id = null, $configPath = null, $constraint = null): void
+    {
+        $this->id = $id ?? 'datatable-' . Str::random(8);
+        $this->configPath = $configPath;
+        $this->constraint = $constraint;
+        $this->model = $model;
+
+        // --- TEMPORARY FIX: UNCONDITIONALLY FORGET OLD STATE ---
+        Session::forget('datatable_hidden_columns_' . $this->id);
+        // ----------------------------------------------------
+
+        // --- START: READ AND RESET PERSISTENCE FROM SESSION ---
+        $sessionId = 'datatable_state_' . $this->id;
+        $sessionState = Session::get($sessionId, []);
+
+        // --- CRITICAL CHANGE: Reset Filters on Mount ---
+        // Remove the 'filters' key from the session data to ensure the page always starts unfiltered.
+        unset($sessionState['filters']);
+        Session::put($sessionId, $sessionState); // Update session immediately
+        // ----------------------------------------------------
+
+        $this->search = $sessionState['search'] ?? request()->input('search', '');
+        $this->perPage = $sessionState['perPage'] ?? request()->input('perPage', 10);
+        $this->sortBy = $sessionState['sortBy'] ?? request()->input('sortBy', $this->sortBy);
+        $this->sortDirection = $sessionState['sortDirection'] ?? request()->input('sortDirection', 'asc');
+        $this->page = (int)($sessionState['page'] ?? request()->input('page', 1));
+        $this->filters = $sessionState['filters'] ?? [];
+        // --- END: READ PERSISTENCE FROM SESSION ---
+
+        $this->initializeColumnVisibility();
+
+        // Initialize with URL parameters if they exist
+        //        $this->sortBy = request()->input('sortBy', $this->sortBy);
+        //        $this->sortDirection = in_array(request()->input('sortDirection'), ['asc', 'desc'])
+        //            ? request()->input('sortDirection')
+        //            : 'asc';
+        //        $this->page = (int)request()->input('page', 1);
+
+        try {
+            // Debug: Log the incoming model name and request data
+            Log::debug('DataTable mount - Initial modelName:', [
+                'modelName' => $this->model,
+                'requestData' => request()->all(),
+                'componentId' => $this->id,
+                'class_exists' => is_string($this->model) ? (class_exists($this->model) ? 'true' : 'false') : 'not a string',
+            ]);
+
+            // If modelName is a string and not a fully qualified class name, try to resolve it
+            if (is_string($this->model)) {
+                // Try with App\Models\ prefix if it's not already a FQCN
+                if (strpos($this->model, '\\') === false) {
+                    $fqcn = "App\\Models\\{$this->model}";
+                    if (class_exists($fqcn)) {
+                        $this->model = $fqcn;
+                        Log::debug('DataTable mount - Resolved model with App\\Models\\ prefix:', [
+                            'model' => $this->model,
+                            'class_exists' => 'true'
+                        ]);
+                    } else {
+                        Log::debug('DataTable mount - Failed to resolve model with App\\Models\\ prefix:', [
+                            'attemptedClass' => $fqcn,
+                            'class_exists' => 'false'
+                        ]);
+                    }
+                } else {
+                    // Try with the exact string as is (in case it's already fully qualified)
+                    $fqcn = ltrim($this->model, '\\');
+                    if (class_exists($fqcn)) {
+                        $this->model = $fqcn;
+                        Log::debug('DataTable mount - Resolved model with exact class name:', [
+                            'model' => $this->model,
+                            'class_exists' => 'true'
+                        ]);
+                    } else {
+                        Log::debug('DataTable mount - Failed to resolve model with exact class name:', [
+                            'attemptedClass' => $fqcn,
+                            'class_exists' => 'false'
+                        ]);
+                    }
+                }
+            }
+
+            // If we still don't have a valid model, try to get it from the route
+            $resolvedModel = $this->model ?? $this->getModelFromRoute();
+            Log::debug('DataTable mount - Resolved model after all attempts:', [
+                'resolvedModel' => $resolvedModel,
+                'class_exists' => $resolvedModel ? (class_exists($resolvedModel) ? 'true' : 'false') : 'null'
+            ]);
+
+            // Final check if the model exists and is valid
+            if (!$resolvedModel || !class_exists($resolvedModel)) {
+                $errorMessage = 'No valid model specified or found. Please provide a valid model class.';
+
+                // Get more details about the error
+                $errorDetails = [
+                    'providedModel' => $this->model,
+                    'resolvedModel' => $resolvedModel,
+                    'class_exists' => $resolvedModel ? (class_exists($resolvedModel) ? 'true' : 'false') : 'null',
+                    'request_uri' => request()->getRequestUri(),
+                    'request_method' => request()->method(),
+                    'session_data' => session()->all(),
+                ];
+
+                // Try to find similar model classes
+                $allClasses = get_declared_classes();
+                $searchTerm = is_string($this->model) ? $this->model : 'Vendor';
+                $matchingClasses = array_filter($allClasses, function($class) use ($searchTerm) {
+                    return stripos($class, $searchTerm) !== false;
+                });
+
+                if (!empty($matchingClasses)) {
+                    $errorDetails['similar_models'] = array_values($matchingClasses);
+                }
+
+                // Log the error with all details
+                Log::error($errorMessage, $errorDetails);
+
+                // For debugging, also log the current include path and autoload info
+                Log::debug('Current include path: ' . get_include_path());
+                Log::debug('Autoload paths: ' . json_encode(explode(PATH_SEPARATOR, get_include_path())));
+
+                throw new Exception($errorMessage . ' Check the logs for more details.');
+            }
+
+            $this->model = $resolvedModel;
+
+            // Get and transform columns
+            $rawColumns = ColumnGenerator::getColumns($this->model, $this->configPath);
+            $this->columns = $this->transformColumns($rawColumns);
+
+            // Populate internal caches
+            $modelInstance = new $this->model();
+            $this->cachedTableColumns = Schema::getColumnListing($modelInstance->getTable());
+
+            // Set default sort column if none is set
+            if (empty($this->sortBy) && !empty($this->columns)) {
+                foreach ($this->columns as $column) {
+                    if (isset($column['field']) && ($column['sortable'] ?? true)) {
+                        $this->sortBy = $column['field'];
+                        $this->sortDirection = 'asc';
+                        break;
+                    }
+                }
+            }
+
+            // Ensure sortDirection is valid
+            $this->sortDirection = in_array($this->sortDirection, ['asc', 'desc']) ? $this->sortDirection : 'asc';
+
+            // Initialize column visibility
+            $this->initializeColumnVisibility();
+
+            // Load the data
+            $this->loadData();
+        } catch (Exception $e) {
+            $this->notify('error', 'DataTable Error: ' . $e->getMessage());
+            Log::error('DataTable Mount Error: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Executes the custom access check defined in the column configuration.
+     * * @param string $checkMethodName The name of the method to call on the AccessService.
+     * @return bool True if the user does NOT have access (column should be hidden).
+     */
+    private function checkColumnAccess(string $checkMethodName): bool
+    {
+        // Use a dedicated Service Provider/Class to run access checks.
+        // This keeps the logic out of the DataTable component.
+        try {
+            // Assume an App\Services\AccessService exists and has static methods.
+            $serviceClass = \App\Services\AccessService::class;
+
+            if (method_exists($serviceClass, $checkMethodName)) {
+                // If the check method returns TRUE (user HAS access), we DON'T hide it.
+                // If the check method returns FALSE (user LACKS access), we HIDE it (return true).
+                return !call_user_func([$serviceClass, $checkMethodName]);
+            }
+
+            // If the method doesn't exist, hide the column as a security precaution.
+            return true;
+        } catch (\Throwable $e) {
+            Log::error("Column access check failed for method {$checkMethodName}: " . $e->getMessage());
+            return true; // Hide on error
+        }
+    }
+
+    protected function initializeColumnVisibility(): void
+    {
+        if (empty($this->columns)) {
+            $this->hiddenColumns = [];
+            $this->selectedColumns = [];
+            $this->tempSelectedColumns = [];
+            return;
+        }
+
+        $sessionHiddenColumns = Session::get('datatable_hidden_columns_' . $this->id);
+
+        if ($sessionHiddenColumns === null) {
+            // First time loading: Determine initial hidden columns based on 'hide' property
+            $initialHiddenFields = collect($this->columns)
+                ->filter(function ($column) {
+                    return (isset($column['hide']) && $column['hide'] === true) && isset($column['field']);
+                })
+                ->pluck('field')
+                ->toArray();
+
+            $this->hiddenColumns = $initialHiddenFields;
+        } else {
+            // Use session value for hidden state
+            $this->hiddenColumns = $sessionHiddenColumns;
+        }
+
+        // Initialize selectedColumns (The UI truth: field => isVisible)
+        $this->selectedColumns = collect($this->columns)
+            ->filter(fn($column) => isset($column['field']))
+            ->mapWithKeys(function($column) {
+                $field = $column['field'];
+                $isHidden = in_array($field, $this->hiddenColumns);
+
+                return [$field => !$isHidden]; // true = visible (checked), false = hidden (unchecked)
+            })
+            ->toArray();
+
+        // tempSelectedColumns should mirror selectedColumns initially
+        $this->tempSelectedColumns = $this->selectedColumns;
+
+        // Persist the *final* hidden state to the session for consistency
+        Session::put('datatable_hidden_columns_' . $this->id, $this->hiddenColumns);
+    }
+
+    protected function saveStateToSession(): void
+    {
+        $sessionId = 'datatable_state_' . $this->id;
+
+        $state = [
+            'search' => $this->search,
+            'perPage' => $this->perPage,
+            'sortBy' => $this->sortBy,
+            'sortDirection' => $this->sortDirection,
+            'page' => $this->page,
+            'filters' => $this->filters,
+        ];
+
+        Session::put($sessionId, $state);
+    }
+
+    public function updatedSearch($value): void
+    {
+        $this->isLoading = true;
+        $this->resetPage();
+        $this->saveStateToSession();
+        $this->loadData();
+    }
+
+    public function updatedPage(): void
+    {
+        $this->isLoading = true;
+        $this->saveStateToSession();
+        $this->loadData();
+    }
+
+    public function sort($field): void
+    {
+        if ($this->sortBy === $field) {
+            // Toggle direction if same field
+            $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            // New field, default to ascending
+            $this->sortBy = $field;
+            $this->sortDirection = 'asc';
+        }
+
+        $this->page = 1; // Reset to first page
+        $this->saveStateToSession();
+        $this->loadData();
+    }
+
+    public function updatedSortBy($value): void
+    {
+        $this->sort($value);
+    }
+
+    public function updatedPerPage($value): void
+    {
+        $this->page = 1;
+        $this->saveStateToSession();
+        $this->loadData();
+    }
+
+    public function gotoPage($page): void
+    {
+        $this->page = $page;
+        $this->saveStateToSession();
+        $this->loadData();
+    }
+
+    public function previousPage(): void
+    {
+        $this->page = max(1, $this->page - 1);
+        $this->saveStateToSession();
+        $this->loadData();
+    }
+
+    public function nextPage(): void
+    {
+        $lastPage = ceil($this->totalRecords / $this->perPage);
+        $this->page = min($lastPage, $this->page + 1);
+        $this->saveStateToSession();
+        $this->loadData();
+    }
+
+    public function resetPage(): void
+    {
+        $this->page = 1;
+    }
+
+    public function firstPage(): void
+    {
+        $this->page = 1;
+        $this->saveStateToSession();
+        $this->loadData();
+    }
+
+    public function lastPage(): void
+    {
+        $this->page = $this->totalPages;
+        $this->saveStateToSession();
+        $this->loadData();
+    }
+
+    /**
+     * Handler for the 'applyTableFilters' event.
+     * Sets the filters and triggers a data reload.
+     * Accepts the filters and the intended target ID (datatableId).
+     */
+    public function setAndFilter(array $filters, ?string $datatableId = null): void // <-- Added datatableId parameter
+    {
+        // CRITICAL CHECK: Only proceed if the event is meant for this specific instance
+        if ($datatableId !== null && $datatableId !== $this->id) {
+            // Log::debug("DataTable {$this->id} ignoring event for ID {$datatableId}.");
+            return;
+        }
+
+        Log::debug("DataTable {$this->id} received new filters.", ['received_filters' => $filters]);
+        $this->filters = $filters; // Update the internal filters property
+        $this->resetPage();         // Reset pagination
+        $this->saveStateToSession();
+        $this->loadData();          // Reload data with new constraints
+    }
+
+    public function applyColumnChanges(): void
+    {
+        try {
+            // Ensure data is synced before proceeding
+            $this->validate(['tempSelectedColumns' => 'array']);
+
+            $this->isLoading = true;
+
+            $newSelectedColumns = [];
+            $newHiddenColumns = [];
+
+            // Iterate through original columns to ensure all relevant fields are covered
+            foreach ($this->originalColumns as $colDef) {
+                if (isset($colDef['field'])) {
+                    $field = $colDef['field'];
+
+                    // Get value from tempSelectedColumns. This value is usually boolean true/false
+                    // but can be string "true"/"false" if Livewire serializes it.
+                    $isVisibleValue = $this->tempSelectedColumns[$field] ?? true;
+
+                    // CRITICAL FIX: Cast to boolean, ensuring "0" or null / return FALSE
+                    $isVisible = (bool)(filter_var($isVisibleValue, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false);
+
+                    $newSelectedColumns[$field] = $isVisible;
+                    if (!$isVisible) {
+                        $newHiddenColumns[] = $field;
+                    }
+                }
+            }
+
+            $this->selectedColumns = $newSelectedColumns;
+            $this->hiddenColumns = $newHiddenColumns;
+
+            $this->updateSessionHiddenColumns(); // Save to session
+
+            $this->loadData();
+            $this->dispatch('closeDropdown'); // Dispatch event to close dropdown
+
+        } catch (\Exception $e) {
+            Log::error('Error in applyColumnChanges: ' . $e->getMessage());
+            $this->notify('error', 'Failed to apply column changes: ' . $e->getMessage());
+        } finally {
+            $this->isLoading = false;
+        }
+    }
+
+    public function resetColumnVisibility(): void
+    {
+        try {
+            $this->isLoading = true;
+
+            // Reset to default visibility settings from originalColumns
+            $this->selectedColumns = collect($this->originalColumns)
+                ->filter(fn($column) => !empty($column['field']))
+                ->mapWithKeys(function ($column) {
+                    $field = $column['field'];
+                    $isHiddenByDefault = isset($column['hide']) && $column['hide'] === true;
+                    return [$field => !$isHiddenByDefault]; // Store true if visible, false if hidden
+                })
+                ->toArray();
+
+            // Update tempSelectedColumns to match the new default state for the dropdown
+            $this->tempSelectedColumns = $this->selectedColumns;
+
+            // Re-derive hiddenColumns based on the new selectedColumns
+            $this->hiddenColumns = collect($this->selectedColumns)
+                ->filter(fn($isVisible) => !$isVisible)
+                ->keys()
+                ->toArray();
+
+            Session::put('datatable_hidden_columns_' . $this->id, $this->hiddenColumns);
+
+            $this->loadData();
+            $this->dispatch('closeDropdown');
+
+        } catch (\Exception $e) {
+            Log::error('Error in resetColumnVisibility: ' . $e->getMessage());
+            $this->notify('error', 'Failed to reset column visibility: ' . $e->getMessage());
+        } finally {
+            $this->isLoading = false;
+        }
+    }
+
+    public function isColumnVisible($field)
+    {
+        // If no field is provided (e.g., for action columns with only a 'view'), it's always visible
+        if ($field === null) {
+            return true;
+        }
+
+        // selectedColumns stores field_name => true (visible) or false (hidden)
+        // If the field isn't in selectedColumns, default to visible.
+        return $this->selectedColumns[$field] ?? true;
+    }
+
+    /**
+     * Extracts the base field name from a relationship field (e.g., 'creator.name' -> 'creator').
+     * This is primarily for internal logic, not column visibility anymore with the new `selectedColumns` structure.
+     */
+    protected function getBaseFieldFromRelationship(string $field): string
+    {
+        if (Str::contains($field, '.')) {
+            return explode('.', $field, 2)[0];
+        }
+        return $field;
+    }
+
+    public function updateSessionHiddenColumns()
+    {
+        // hiddenColumns is already derived and populated by applyColumnChanges based on selectedColumns.
+        // We just need to persist it to session.
+        Session::put('datatable_hidden_columns_' . $this->id, $this->hiddenColumns);
+    }
+
+    /**
+     * Pre-processes searchable columns once during mount.
+     * This function now simply returns all fields marked as searchable in the column definitions.
+     * The actual existence check in the database is performed during query building in loadData.
+     * @param array $columns Transformed columns
+     * @return array Flat array of searchable field names
+     */
+    protected function getSearchableFieldsFromColumns(array $columns): array
+    {
+        $searchableFields = [];
+        foreach ($columns as $column) {
+            if (isset($column['field']) && ($column['searchable'] ?? true)) {
+                $searchableFields[] = $column['field'];
+            }
+        }
+        return array_unique($searchableFields);
+    }
+
+    protected function compileAllConstraints(): array
+    {
+        $conditions = [];
+
+        // 1. Static constraints passed via Blade/URL (if present)
+        if (!empty($this->constraint)) {
+            // Attempt to decode JSON array of arrays
+            $decoded = is_string($this->constraint) ? json_decode($this->constraint, true) : $this->constraint;
+
+            if (is_array($decoded)) {
+                // Only merge if it looks like an array of constraints (array of arrays)
+                if (isset($decoded[0]) && is_array($decoded[0])) {
+                    $conditions = array_merge($conditions, $decoded);
+                }
+                // Note: This logic assumes correct formatting from the Blade view.
+            }
+        }
+
+        // 2. Dynamic filter constraints from $this->filters array
+        // Key is the column name, value is the selected filter value
+        foreach ($this->filters as $field => $value) {
+            // Only apply filter if the value is meaningful (not null, not empty string, not zero/false)
+            if (!empty($value) || $value === 0 || $value === '0') {
+                // Create a simple WHERE clause: ['field', '=', 'value']
+                // We use simple equality, but you could add more complex logic here if needed.
+                $conditions[] = [$field, '=', $value];
+            }
+        }
+
+        return $conditions;
+    }
+
+    public function loadData(): void
+    {
+        // Set loading state to provide visual feedback in the UI
+        $this->isLoading = true;
+
+        // Reset data state before loading
+        $this->data = collect();
+        $this->totalRecords = 0;
+        $this->totalPages = 0;
+
+        try {
+            // 1. VALIDATE THE MODEL
+            if (empty($this->model) || !class_exists($this->model)) {
+                throw new Exception('Model is not set or invalid. Please provide a valid model class.');
+            }
+            $modelInstance = new $this->model();
+
+            // 2. DYNAMICALLY BUILD EAGER-LOADING
+            $with = [];
+            foreach ($this->columns as $column) {
+                if (!empty($column['with']) && is_array($column['with'])) {
+                    array_push($with, ...$column['with']);
+                }
+
+                if (isset($column['field']) && Str::contains($column['field'], '.')) {
+                    $parts = explode('.', $column['field']);
+                    array_pop($parts);
+                    if (!empty($parts)) {
+                        $with[] = implode('.', $parts);
+                    }
+                }
+            }
+
+            // Safely get the model's default 'with' property
+            $defaultProperties = get_class_vars($this->model);
+            $modelDefaultWith = $defaultProperties['with'] ?? [];
+            if (!empty($modelDefaultWith)) {
+                array_push($with, ...$modelDefaultWith);
+            }
+
+            // Eager load media if applicable
+            if (in_array('Spatie\\MediaLibrary\\HasMedia', class_implements($this->model))) {
+                $with[] = 'media';
+            }
+
+            $query = $this->model::query()->with(array_unique($with));
+
+            // 3. DYNAMICALLY APPLY CONSTRAINTS AND FILTERS
+            $constraints = $this->compileAllConstraints();
+            if (!empty($constraints)) {
+                foreach ($constraints as $condition) {
+                    if (!is_array($condition) || count($condition) < 2) {
+                        continue;
+                    }
+
+                    // Pad array to guarantee operator presence (defaults to '=')
+                    [$field, $operator, $value] = array_pad($condition, 3, null);
+                    if ($value === null) {
+                        $value = $operator;
+                        $operator = '=';
+                    }
+
+                    // Handle relationship filtering (e.g., 'accountManager.id')
+                    if (Str::contains($field, '.')) {
+                        $relationParts = explode('.', $field, 2);
+                        $relationName = $relationParts[0];
+                        $relationField = $relationParts[1];
+
+                        $query->whereHas($relationName, function (Builder $subQuery) use ($relationField, $operator, $value) {
+                            if (strtolower($operator) === 'in') {
+                                $subQuery->whereIn($relationField, (array) $value);
+                            } else {
+                                $subQuery->where($relationField, $operator, $value);
+                            }
+                        });
+                    } else {
+                        if (strtolower($operator) === 'in') {
+                            $query->whereIn($field, (array) $value);
+                        } else {
+                            $query->where($field, $operator, $value);
+                        }
+                    }
+                }
+            }
+
+            // 4. DYNAMICALLY APPLY SEARCH (Semantic Vector Search + Keyword Fallback)
+            if (!empty(trim($this->search))) {
+                $searchValue = trim($this->search);
+
+                $query->where(function ($q) use ($searchValue, $modelInstance) {
+
+                    // 1. Semantic Vector Search (Laravel AI SDK + vector embedding column)
+                    if (Schema::hasColumn($modelInstance->getTable(), 'embedding')) {
+                        $q->whereVectorSimilarTo('embedding', $searchValue, minSimilarity: 0.6);
+                    }
+
+                    // 2. Fallback to standard LIKE queries for exact keyword matches
+                    $q->orWhere(function ($fallbackQ) use ($searchValue, $modelInstance) {
+                        $sqlSearchValue = '%' . $searchValue . '%';
+
+                        foreach ($this->searchableColumns as $field) {
+                            if (Str::contains($field, '.')) {
+                                $relationParts = explode('.', $field, 2);
+                                $fallbackQ->orWhereHas($relationParts[0], function ($relationQuery) use ($relationParts, $sqlSearchValue) {
+                                    $relationQuery->where($relationParts[1], 'LIKE', $sqlSearchValue);
+                                });
+                            } elseif (Schema::hasColumn($modelInstance->getTable(), $field)) {
+                                $fallbackQ->orWhere($field, 'LIKE', $sqlSearchValue);
+                            }
+                        }
+                    });
+                });
+            }
+
+            // 5. DYNAMICALLY APPLY SORTING
+            if ($this->sortBy) {
+                if (!Str::contains($this->sortBy, '.')) {
+                    $query->orderBy($this->sortBy, $this->sortDirection);
+                }
+            }
+
+            // 6. EXECUTE WITH CACHED COUNT (Laravel 13 Cache::touch)
+            // Unique cache key based on model, search string, active filters, and constraints
+            $cacheKey = 'datatable_count_' . md5($this->model . $this->search . json_encode($this->filters) . json_encode($this->constraint));
+
+            // Touch/extend the cache TTL by 15 minutes (900 seconds)
+            if (! Cache::touch($cacheKey, 900)) {
+                // Cache miss: Execute the expensive COUNT query once and save it
+                $this->totalRecords = (int) $query->count();
+                Cache::put($cacheKey, $this->totalRecords, 900);
+            } else {
+                // Cache hit: Retrieve existing total directly from memory
+                $this->totalRecords = (int) Cache::get($cacheKey, 0);
+            }
+
+            // 7. FETCH PAGINATED ROWS & UPDATE STATE
+            $this->data = $query->skip(($this->page - 1) * $this->perPage)
+                ->take($this->perPage)
+                ->get();
+
+            $this->totalPages = (int) ceil($this->totalRecords / $this->perPage) ?: 1;
+
+        } catch (Exception $e) {
+            Log::error('DataTable Load Error: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            $this->notify('error', 'Failed to load data: ' . $e->getMessage());
+            $this->data = collect();
+            $this->totalRecords = 0;
+            $this->totalPages = 0;
+        } finally {
+            $this->isLoading = false;
+        }
+    }
+
+    /**
+     * ✅ Add a computed property to cleanly check for functionality.
+     * This provides a simple boolean flag for the view to determine if rows should be clickable.
+     *
+     * @return bool
+     */
+    public function getIsRowClickableProperty(): bool
+    {
+        return !empty($this->onRowClick) && !empty($this->onRowClick['url']);
+    }
+
+    /**
+     * Handle row clicks with a server-side action. This is the idiomatic Livewire approach.
+     * It's secure, clean, and keeps logic out of the frontend JavaScript.
+     *
+     * @param string $rowId The ID of the clicked row.
+     * @return RedirectResponse|null
+     */
+    public function handleRowClick(string $rowId): ?RedirectResponse
+    {
+        // Check if the onRowClick functionality is configured for this table instance
+        if (!empty($this->onRowClick) && isset($this->onRowClick['url'])) {
+            // Construct the destination URL by replacing the placeholder
+            $url = str_replace('{id}', $rowId, $this->onRowClick['url']);
+
+            // Use Live wire's built-in redirect. 'navigate: true' enables SPA-style navigation.
+            return $this->redirect($url, navigate: true);
+        }
+
+        // ✅ Explicitly return null if the condition is not met.
+        // This satisfies the function's return type signature and improves clarity.
+        return null;
+    }
+
+    /**
+     * ✅ This is the key fix.
+     * It resets the loaded data to an empty array, forcing the render() method
+     * to fetch a completely fresh collection from the database.
+     * This is safer than unset() as the property always exists.
+     */
+    public function forceRerender(): void
+    {
+        $this->data = []; // <-- FIX: Reset to an empty array instead of unsetting.
+    }
+
+    public function render(): \Illuminate\Contracts\View\Factory|\Illuminate\Contracts\View\View|\Illuminate\View\View
+    {
+        // --- ✅ ROBUST DATA LOADING FIX ---
+        // This check now correctly handles the empty array from forceRerender.
+        // `empty()` is true for `[]`, triggering a reload.
+        if (empty($this->data)) {
+            try {
+                $this->loadData();
+            } catch (Exception $e) {
+                Log::error('Error during forced data reload in render method', ['error' => $e->getMessage()]);
+                $this->notify('error', 'Failed to reload table data. Please check the logs.');
+                $this->data = collect(); // Ensure $data is an empty collection on error
+            }
+        }
+        // --- END FIX ---
+
+        // This block remains for initial column setup
+        if (empty($this->columns) && !empty($this->model)) {
+            try {
+                $rawColumns = ColumnGenerator::getColumns($this->model, $this->configPath);
+                $this->columns = $this->transformColumns($rawColumns);
+                $this->initializeColumnVisibility();
+
+                // If data is still empty after column init, load it.
+                if (empty($this->data)) {
+                    $this->loadData();
+                }
+            } catch (Exception $e) {
+                Log::error('Error initializing columns in render method', [
+                    'error' => $e->getMessage(),
+                    'model' => $this->model,
+                    'configPath' => $this->configPath,
+                    'trace' => $e->getTraceAsString()
+                ]);
+
+                $this->columns = [];
+                $this->notify('error', 'Failed to initialize table columns. Please check the logs for more details.');
+            }
+        }
+
+        return view('livewire.data-table');
+    }
+
+}

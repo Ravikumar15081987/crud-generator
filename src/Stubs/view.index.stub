@@ -3,14 +3,29 @@
 @section('title', 'Manage {{ modelName }}')
 
 @section('content')
-    <div class="container mx-auto p-4">
-        <h1 class="text-2xl font-bold mb-4">{{ modelName }} List</h1>
-        
-        <a href="{{ route('{{ routeName }}.create') }}" class="bg-blue-500 text-white px-4 py-2 rounded">Create New {{ modelName }}</a>
+    <div class="container-fluid py-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h3 class="mb-0">{{ModelName}} Management</h3>
+            <a href="{{ route('{{role}}.{{model-plural-kebab}}.create') }}" class="btn btn-primary">
+                <i class="ri-add-line me-1"></i> Add {{ModelName}}
+            </a>
+        </div>
 
-        <div class="mt-6 bg-white shadow overflow-hidden sm:rounded-md">
-            <!-- Table or list content goes here -->
-            <p class="p-4 text-gray-500">List of {{ modelName }}s will be displayed here.</p>
+        <!-- Livewire Filters Component -->
+        <livewire:data-table-filters 
+            datatableId="{{ModelName}}TableId" 
+            :config="$filtersConfig" 
+        />
+
+        <!-- Livewire DataTable Component -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <livewire:data-table 
+                    model="{{ModelName}}" 
+                    id="{{ModelName}}TableId" 
+                    :configPath="'datatable.{{role}}.{{model-plural-kebab}}'" 
+                />
+            </div>
         </div>
     </div>
 @endsection

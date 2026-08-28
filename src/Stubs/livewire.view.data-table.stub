@@ -1,0 +1,506 @@
+<div class="card p-2">
+    <div wire:refresh>
+        <div class="row" wire:key="datatable-wrapper-{{ $id ?? 'default' }}">
+            <div class="col-12 mb-3">
+
+                {{-- TOOLBAR --}}
+                <div class="d-flex flex-column flex-md-row justify-content-between align-items-center mb-4 bg-white p-2 rounded-custom border border-light-subtle shadow-sm gap-3">
+
+                    {{-- Left: Search Input & Details --}}
+                    <div class="d-flex flex-column flex-md-row align-items-md-center gap-3 flex-grow-1 w-100">
+
+                        {{-- Search Bar --}}
+                        <div class="input-group input-group-sm rounded-custom overflow-hidden bg-white" style="width: 100%; max-width: 320px; height: 36px; border: 1px solid #cbd5e1; transition: border-color 0.2s;">
+                            <span class="input-group-text bg-transparent border-0 text-muted ps-3 pe-2">
+                              <i class="ri-search-line" style="font-size: 0.9rem;"></i>
+                            </span>
+                            <input type="text" class="form-control form-control-sm border-0 bg-transparent shadow-none px-2 text-dark" style="font-size: 0.85rem;" placeholder="Search everywhere..."
+                                   wire:model.live.debounce.500ms="search">
+
+                            {{-- CLEAR BUTTON --}}
+                            @if ($search)
+                                <button wire:click="$set('search', '')" class="btn btn-sm btn-link text-muted border-0 border-start text-decoration-none px-2 d-flex align-items-center" style="border-color: #cbd5e1 !important; border-radius: 0;" type="button">
+                                    <i class="ri-close-line text-secondary" style="font-size: 1.2rem;"></i>
+                                </button>
+                            @endif
+                        </div>
+
+                        {{-- SEARCH DETAILS --}}
+                        @if ($search)
+                            <div class="text-muted d-flex align-items-center mt-2 mt-md-0" style="font-size: 0.85rem;">
+                                <i class="ri-information-line me-2" style="color: #6366f1; font-size: 1.1rem;"></i>
+                                Showing search results for "{{ $search }}" ({{ count($data) }} of {{ $totalRecords }} total records)
+                            </div>
+                        @endif
+                    </div>
+
+                    {{-- Right: Controls --}}
+                    <div class="d-flex align-items-center gap-2 flex-shrink-0 mt-3 mt-md-0">
+
+                        {{-- Show Per Page --}}
+                        <div class="d-flex align-items-center rounded-custom px-3 py-1 sleek-action-bg border" style="height: 36px; border-color: #e2e8f0 !important;">
+                            <span class="text-secondary fw-medium" style="font-size: 0.85rem;">Show</span>
+                            <select wire:model.live="perPage" class="form-select form-select-sm border-0 bg-transparent shadow-none fw-bold text-dark cursor-pointer py-0 ps-2" style="width: 70px; font-size: 0.85rem; padding-right: 1.8rem !important; background-position: right 0.25rem center;">
+                                <option value="10">10</option>
+                                <option value="25">25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </div>
+
+                        {{-- Columns Dropdown --}}
+                        <div class="dropdown">
+                            <button class="btn btn-sm rounded-custom px-3 py-1 d-flex align-items-center fw-medium border border-light-subtle sleek-action-bg" type="button" data-bs-toggle="dropdown" aria-expanded="false" wire:ignore.self style="height: 36px; font-size: 0.85rem;">
+                                <i class="ri-layout-column-line me-2 text-secondary"></i> <span class="text-dark">Columns</span> <i class="ri-arrow-down-s-line ms-1 text-secondary"></i>
+                            </button>
+
+                            <div class="dropdown-menu dropdown-menu-end shadow p-0 mt-2 border border-light-subtle rounded-custom" style="min-width: 240px;" id="columnToggleDropdown" data-bs-auto-close="outside" wire:ignore.self>
+                                <div class="dropdown-header border-bottom p-2 px-3 bg-light text-dark fw-bold" style="border-top-left-radius: 8px; border-top-right-radius: 8px; font-size: 0.85rem;">
+                                    Display Columns
+                                </div>
+
+                                <div class="dropdown-body p-2" style="max-height: 200px; overflow-y: auto;">
+                                    @if(empty($columns))
+                                        <div class="text-muted p-2 small">No columns available.</div>
+                                    @else
+                                        @foreach ($columns as $column)
+                                            @if (isset($column['field']))
+                                                <div class="dropdown-item px-2 py-1 rounded">
+                                                    <div class="form-check mb-0 d-flex align-items-center" wire:key="column-toggle-{{ $column['field'] }}">
+                                                        <input class="form-check-input column-toggle-checkbox cursor-pointer me-2 mt-0" type="checkbox"
+                                                               id="col-{{ $column['field'] }}"
+                                                               wire:model="tempSelectedColumns.{{ $column['field'] }}" style="width: 14px; height: 14px;">
+                                                        <label class="form-check-label w-100 cursor-pointer text-dark" for="col-{{ $column['field'] }}" style="font-size: 0.85rem;">
+                                                            {{ $column['label'] }}
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            @endif
+                                        @endforeach
+                                    @endif
+                                </div>
+
+                                <div class="dropdown-footer border-top p-2 bg-white d-flex gap-2" style="border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+                                    <button type="button" class="btn btn-sm btn-light border flex-grow-1 text-muted fw-medium rounded-custom" style="font-size: 0.85rem;" wire:click="resetColumnVisibility">Reset</button>
+                                    <button type="button" class="btn btn-sm text-white flex-grow-1 fw-medium rounded-custom" style="background-color: #162f64; font-size: 0.85rem;" wire:click="applyColumnChanges">Done</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- TABLE WRAPPER --}}
+                <div class="position-relative">
+
+                    {{-- Loading Overlay --}}
+                    <div wire:loading.flex class="position-absolute top-0 start-0 w-100 h-100 align-items-center justify-content-center" style="z-index: 5; background-color: rgba(248, 250, 252, 0.6); backdrop-filter: blur(2px); border-radius: 8px;">
+                        <div class="spinner-border text-primary border-3" style="width: 2rem; height: 2rem;" role="status"></div>
+                    </div>
+
+                    <div class="table-responsive text-nowrap overflow-visible pb-4">
+                        <table class="table-custom">
+                            <thead>
+                            <tr>
+                                @foreach ($columns as $column)
+                                    @if (!isset($column['field']) || $this->isColumnVisible($column['field']))
+                                        <th @if (isset($column['field']) && ($column['sortable'] ?? true))
+                                                data-sort-field="{{ $column['field'] }}" style="cursor: pointer; user-select: none;"
+                                            class="position-relative sortable-header" @else style="user-select: none;" @endif>
+                                            <div class="d-flex align-items-center text-nowrap">
+                                                {{ $column['label'] ?? '' }}
+                                                @if (isset($column['field']) && $sortBy === $column['field'])
+                                                    <span class="ms-1 text-white opacity-75">
+                                                            <i class="ri-arrow-{{ $sortDirection === 'asc' ? 'up' : 'down' }}-s-fill"></i>
+                                                        </span>
+                                                @endif
+                                            </div>
+                                        </th>
+                                    @endif
+                                @endforeach
+                            </tr>
+                            </thead>
+                            <tbody>
+
+                            @if ($isLoading)
+                                {{-- Skeleton Loading --}}
+                                @php
+                                    $visibleColumnsCount = count(array_filter($columns, function ($col) {
+                                        return (!isset($col['field']) && isset($col['view'])) || (isset($col['field']) && $this->isColumnVisible($col['field']));
+                                    }));
+                                @endphp
+                                @for ($i = 0; $i < (int)$perPage; $i++)
+                                    <tr class="placeholder-glow">
+                                        @for($c = 0; $c < $visibleColumnsCount; $c++)
+                                            <td><div class="placeholder bg-light rounded" style="width: {{ rand(40, 90) }}%; height: 14px;"></div></td>
+                                        @endfor
+                                    </tr>
+                                @endfor
+                            @else
+                                {{-- Actual Data --}}
+                                @forelse ($data as $row)
+                                    <tr @if ($this->isRowClickable) wire:click="handleRowClick('{{ $row['_model']->getKey() }}')" class="row-hover" @endif>
+                                        @foreach ($columns as $column)
+                                            @if (!isset($column['field']) || $this->isColumnVisible($column['field']))
+                                                <td>
+                                                    @if (isset($column['view']))
+                                                        @php
+                                                            $rowData = is_object($row) ? $row->toArray() : (is_array($row) ? $row : []);
+                                                            $viewData = ['data' => $rowData];
+                                                            if (is_object($row)) { $viewData['_model'] = $row; }
+                                                        @endphp
+                                                        @include($column['view'], $viewData)
+                                                    @elseif (isset($column['field']))
+                                                        <span class="fw-medium text-secondary">{{ $this->getColumnData($column['field'], $row) }}</span>
+                                                    @endif
+                                                </td>
+                                            @endif
+                                        @endforeach
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        @php
+                                            $visibleColumnsCount = count(array_filter($columns, function ($col) {
+                                                return (!isset($col['field']) && isset($col['view'])) || (isset($col['field']) && $this->isColumnVisible($col['field']));
+                                            }));
+                                        @endphp
+                                        <td colspan="{{ $visibleColumnsCount }}" class="text-center py-4 text-muted fw-medium small">
+                                            No records found.
+                                        </td>
+                                    </tr>
+                                @endforelse
+                            @endif
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {{-- PAGINATION --}}
+                <div class="bg-white border border-light-subtle shadow-sm p-3 rounded-custom d-flex flex-column flex-md-row justify-content-between align-items-center mt-2">
+                    <div class="mb-2 mb-md-0 fw-medium" style="font-size: 0.85rem; color: #162f64;">
+                        @php
+                            $start = ($page - 1) * $perPage + 1;
+                            $end = min($page * $perPage, $totalRecords);
+                        @endphp
+                        Showing <span class="fw-bold">{{ $start }}</span> to <span class="fw-bold">{{ $end }}</span> of <span class="fw-bold">{{ $totalRecords }}</span> entries
+                    </div>
+
+                    <nav aria-label="Page navigation">
+                        <ul class="pagination pagination-sm mb-0 gap-1 align-items-center">
+                            <li class="page-item {{ $page === 1 ? 'disabled' : '' }}">
+                                <a class="page-link border-0 text-muted bg-transparent px-1" wire:click="firstPage" href="javascript:void(0);">
+                                    <i class="ri-skip-left-line"></i>
+                                </a>
+                            </li>
+                            <li class="page-item {{ $page === 1 ? 'disabled' : '' }}">
+                                <a class="page-link border-0 text-muted bg-transparent px-1" wire:click="previousPage" href="javascript:void(0);">
+                                    <i class="ri-arrow-left-s-line"></i>
+                                </a>
+                            </li>
+
+                            @php
+                                $maxVisiblePages = 3;
+                                $half = floor($maxVisiblePages / 2);
+                                $start = max(1, $page - $half);
+                                $end = min($start + $maxVisiblePages - 1, $totalPages);
+                                if ($end - $start + 1 < $maxVisiblePages) { $start=max(1, $end - $maxVisiblePages + 1); }
+                            @endphp
+
+                            @for ($i = $start; $i <= $end; $i++)
+                                <li class="page-item {{ $page == $i ? 'active' : '' }}">
+                                    <a class="page-link custom-page-link" wire:click="gotoPage({{ $i }})" href="javascript:void(0);">
+                                        {{ $i }}
+                                    </a>
+                                </li>
+                            @endfor
+
+                            <li class="page-item {{ $page === $totalPages ? 'disabled' : '' }}">
+                                <a class="page-link border-0 text-muted bg-transparent px-1" wire:click="nextPage" href="javascript:void(0);">
+                                    <i class="ri-arrow-right-s-line"></i>
+                                </a>
+                            </li>
+                            <li class="page-item {{ $page === $totalPages ? 'disabled' : '' }}">
+                                <a class="page-link border-0 text-muted bg-transparent px-1" wire:click="lastPage" href="javascript:void(0);">
+                                    <i class="ri-skip-right-line"></i>
+                                </a>
+                            </li>
+                        </ul>
+                    </nav>
+                </div>
+
+                <style>
+                    /* Modern Minimalist Overrides */
+                    body {
+                        background-color: #fafafa;
+                    }
+
+                    .page-title-box h4 {
+                        letter-spacing: -0.02em;
+                    }
+
+                    /* Filter Card */
+                    .filter-card {
+                        background: #ffffff;
+                        border: 1px solid #f4f4f5;
+                        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+                        border-radius: 12px;
+                    }
+
+                    .filter-input {
+                        background-color: #fbfbfb;
+                        border: 1px solid #e4e4e7;
+                        font-size: 0.8rem;
+                        border-radius: 6px;
+                        box-shadow: none !important;
+                        transition: all 0.2s;
+                    }
+
+                    .filter-input:focus {
+                        background-color: #fff;
+                        border-color: #a1a1aa;
+                    }
+
+                    /* Rows As Cards Table */
+                    .table-custom {
+                        border-collapse: separate;
+                        border-spacing: 0 0.5rem;
+                        width: 100%;
+                        margin-top: -0.5rem;
+                    }
+
+                    .table-custom thead th {
+                        border: none;
+                        padding: 0.5rem 1.25rem;
+                        color: #a1a1aa;
+                        font-weight: 600;
+                        text-transform: uppercase;
+                        font-size: 0.65rem;
+                        letter-spacing: 0.05em;
+                        background: transparent;
+                    }
+
+                    .table-custom tbody tr {
+                        background-color: #ffffff;
+                        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+                        transition: transform 0.15s ease, box-shadow 0.15s ease;
+                    }
+
+                    .table-custom tbody tr:hover {
+                        transform: translateY(-1px);
+                        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+                    }
+
+                    .table-custom tbody td {
+                        border-top: 1px solid #f4f4f5;
+                        border-bottom: 1px solid #f4f4f5;
+                        padding: 0.25rem 1rem;
+                        vertical-align: middle;
+                        font-family: inherit;
+                    }
+
+                    .table-custom tbody td:first-child {
+                        border-left: 1px solid #f4f4f5;
+                        border-top-left-radius: 10px;
+                        border-bottom-left-radius: 10px;
+                    }
+
+                    .table-custom tbody td:last-child {
+                        border-right: 1px solid #f4f4f5;
+                        border-top-right-radius: 10px;
+                        border-bottom-right-radius: 10px;
+                    }
+
+                    /* Typography & Badges */
+                    .text-micro {
+                        font-size: 0.7rem;
+                        color: #a1a1aa;
+                    }
+
+                    .badge-soft {
+                        padding: 0.35rem 0.6rem;
+                        font-size: 0.65rem;
+                        font-weight: 600;
+                        border-radius: 6px;
+                        letter-spacing: 0.02em;
+                    }
+
+                    /* Buttons */
+                    .btn-tiny {
+                        padding: 0.25rem 0.6rem;
+                        font-size: 0.75rem;
+                        border-radius: 6px;
+                        font-weight: 500;
+                    }
+
+                    .btn-icon-tiny {
+                        width: 28px;
+                        height: 28px;
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        border-radius: 6px;
+                        border: 1px solid transparent;
+                        background: transparent;
+                        color: #71717a;
+                        transition: all 0.2s;
+                    }
+
+                    .btn-icon-tiny:hover {
+                        background: #f4f4f5;
+                        color: #18181b;
+                        border-color: #e4e4e7;
+                    }
+
+                    /* Dropdown Customization */
+                    .dropdown-menu-custom {
+                        min-width: 180px;
+                        border: 1px solid #f4f4f5;
+                        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+                        border-radius: 10px;
+                        padding: 0.5rem;
+                    }
+
+                    .dropdown-item-custom {
+                        font-size: 0.75rem;
+                        font-weight: 500;
+                        padding: 0.4rem 0.75rem;
+                        border-radius: 6px;
+                        color: #3f3f46;
+                        transition: background 0.15s;
+                    }
+
+                    .dropdown-item-custom:hover {
+                        background-color: #f4f4f5;
+                        color: #18181b;
+                    }
+
+                    .dropdown-item-custom i {
+                        color: #a1a1aa;
+                        margin-right: 8px;
+                        font-size: 0.9rem;
+                    }
+
+                    .dropdown-item-custom:hover i {
+                        color: #18181b;
+                    }
+
+                    /* Timeline Styles for Offcanvas */
+                    .timeline-wrapper {
+                        position: relative;
+                        padding-left: 1.25rem;
+                    }
+
+                    .timeline-wrapper::before {
+                        content: '';
+                        position: absolute;
+                        left: 4px;
+                        top: 0;
+                        bottom: 0;
+                        width: 2px;
+                        background-color: #f4f4f5;
+                    }
+
+                    .timeline-item {
+                        position: relative;
+                        margin-bottom: 1.25rem;
+                    }
+
+                    .timeline-item:last-child {
+                        margin-bottom: 0;
+                    }
+
+                    .timeline-marker {
+                        position: absolute;
+                        left: -1.25rem;
+                        top: 0.25rem;
+                        width: 10px;
+                        height: 10px;
+                        border-radius: 50%;
+                        background-color: #a1a1aa;
+                        border: 2px solid #fff;
+                        box-shadow: 0 0 0 2px #f4f4f5;
+                    }
+
+                    .timeline-marker.success {
+                        background-color: #10b981;
+                        box-shadow: 0 0 0 2px #d1fae5;
+                    }
+
+                    .timeline-marker.info {
+                        background-color: #3b82f6;
+                        box-shadow: 0 0 0 2px #dbeafe;
+                    }
+
+                    .timeline-marker.danger {
+                        background-color: #ef4444;
+                        box-shadow: 0 0 0 2px #fee2e2;
+                    }
+
+                    .timeline-marker.warning {
+                        background-color: #f59e0b;
+                        box-shadow: 0 0 0 2px #fef3c7;
+                    }
+
+                    .timeline-marker.secondary {
+                        background-color: #71717a;
+                        box-shadow: 0 0 0 2px #e4e4e7;
+                    }
+
+                    /* Force the table container to allow dropdowns to overflow */
+                    .table-responsive {
+                        overflow: visible !important;
+                    }
+
+                    /* Ensure the action cell doesn't clip content */
+                    .table-custom tbody td {
+                        overflow: visible !important;
+                    }
+
+                    /* Force the dropdown menu to break out of the row */
+                    .dropdown {
+                        position: static !important;
+                    }
+
+                    .dropdown-menu {
+                        position: absolute !important;
+                        z-index: 1050 !important; /* Higher than any card or row */
+                    }
+
+                    /* Polished Minimalist Pagination */
+
+                    /* 1. Wrap the entire pagination block in a subtle card */
+                    nav .d-none.d-sm-flex {
+                        align-items: center !important;
+                        background: #ffffff;
+                        padding: 0.5rem 1.25rem;
+                        border-radius: 12px;
+                        border: 1px solid #f4f4f5;
+                        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+                        margin-top: 1rem;
+                    }
+
+
+                </style>
+            </div>
+        </div>
+
+        <script>
+            function handleSortClick(event) {
+                event.preventDefault();
+                const field = event.currentTarget.getAttribute('data-sort-field');
+                if (field) {
+                    const component = window.Livewire.find('{{ $__livewire->getId() }}');
+                    if (component) component.call('sort', field);
+                }
+            }
+            document.addEventListener('DOMContentLoaded', function() {
+                document.querySelectorAll('[data-sort-field]').forEach(header => {
+                    header.addEventListener('click', handleSortClick);
+                });
+                const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+                tooltipTriggerList.map(function(tooltipTriggerEl) {
+                    return new bootstrap.Tooltip(tooltipTriggerEl);
+                });
+            });
+        </script>
+    </div>
+</div>

@@ -20,14 +20,17 @@ class MakeCrudCommand extends Command
                             {--repository : Generate Repository layer only}
                             {--views : Generate Blade views only}
                             {--requests : Generate Form Requests only}
-                            {--route : Append routes only}';
+                            {--route : Append routes only}
+                            {--api : Generate Api Resources} 
+                            {--media : Attach Media}';
 
+   
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Generate full CRUD architecture (Repository, Service, Controller, Requests, Views, Routes)';
+    protected $description = 'Generate full CRUD architecture (Controller, Service, Repository, Requests, Views, Routes) for a given model. Use --api for API endpoints only. Use --media for Spatie MediaLibrary support.';
 
     public function handle()
     {
@@ -49,6 +52,7 @@ class MakeCrudCommand extends Command
 
         // 3. Generate base Facade and Service files if they don't exist
         $this->generateUiNotifyBaseFiles();
+        $this->generateBaseDataTableFiles();
 
         $name = ucfirst($this->argument('name'));
 
@@ -98,35 +102,82 @@ class MakeCrudCommand extends Command
             // Auto-generate smart validation rules based on model $fillable and $casts
             $rulesString = '';
             $modelClass = "\\App\\Models\\{$name}";
+            $hasSoftDeletes = false;
+            $hasSpatieMedia = $this->option('media');
+
             if (class_exists($modelClass)) {
-                $model = new $modelClass();
+                $model = new $modelClass();               
+
+                $traits = class_uses_recursive($modelClass);
+                $hasSoftDeletes = in_array('Illuminate\Database\Eloquent\SoftDeletes', $traits);
+                if (in_array('Spatie\MediaLibrary\InteractsWithMedia', $traits)) {
+                    $hasSpatieMedia = true;
+                }
+
                 $fillable = $model->getFillable();
                 $casts = $model->getCasts(); // Reads the protected $casts array
 
+                // Logic to insert inside your view generation for _form.blade.php
+                $formFieldsHTML = '';
+                
                 foreach ($fillable as $field) {
-                    $rules = ['required'];
+                    // 1. Smart Image/File Uploads
+                    if (in_array($field, ['image', 'photo', 'avatar', 'document', 'file'])) {
+                        $formFieldsHTML .= <<<HTML
+                                    <div class="mb-3">
+                                        <label for="{$field}">{{ ucfirst('$field') }}</label>
+                                        <input type="file" name="{$field}" class="form-control" id="{$field}">
+                                        <x-field-error field="{$field}" />
+                                    </div>\n
+                        HTML;
+                    } 
+                    // 2. Smart Relationship Dropdowns
+                    elseif (\Illuminate\Support\Str::endsWith($field, '_id')) {
+                        $relationName = str_replace('_id', '', $field);
+                        $relationVar = \Illuminate\Support\Str::plural($relationName); // e.g., 'categories'
+                        
+                        $formFieldsHTML .= <<<HTML
+                                    <div class="mb-3">
+                                        <label for="{$field}">{{ ucfirst('$relationName') }}</label>
+                                        <select name="{$field}" class="form-select" id="{$field}">
+                                            <option value="">Select {{ ucfirst('$relationName') }}</option>
+                                            @foreach(\App\Models\\ucfirst($relationName)::all() as \$item)
+                                                <option value="{{ \$item->id }}" {{ old('{$field}', \$model->{$field} ?? '') == \$item->id ? 'selected' : '' }}>
+                                                    {{ \$item->name ?? \$item->title ?? \$item->id }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                        <x-field-error field="{$field}" />
+                                    </div>\n
+                        HTML;
+                    } 
+                    // 3. Standard Text Inputs
+                    else {
+                        $rules = ['required'];
                     
-                    // Determine data type based on casts or naming conventions
-                    $castType = $casts[$field] ?? null;
-                    
-                    if ($castType === 'boolean' || $castType === 'bool' || \Illuminate\Support\Str::startsWith($field, ['is_', 'has_'])) {
-                        $rules[] = 'boolean';
-                    } elseif ($castType === 'integer' || $castType === 'int' || \Illuminate\Support\Str::endsWith($field, '_id')) {
-                        $rules[] = 'integer';
-                    } elseif (in_array($castType, ['date', 'datetime']) || \Illuminate\Support\Str::endsWith($field, '_at')) {
-                        $rules[] = 'date';
-                    } else {
-                        $rules[] = 'string';
-                        // Drop the max:255 limit for fields that are likely text areas
-                        if (!in_array($field, ['description', 'body', 'content', 'notes'])) {
-                            $rules[] = 'max:255';
+                        // Determine data type based on casts or naming conventions
+                        $castType = $casts[$field] ?? null;
+                        
+                        if ($castType === 'boolean' || $castType === 'bool' || \Illuminate\Support\Str::startsWith($field, ['is_', 'has_'])) {
+                            $rules[] = 'boolean';
+                        } elseif ($castType === 'integer' || $castType === 'int' || \Illuminate\Support\Str::endsWith($field, '_id')) {
+                            $rules[] = 'integer';
+                        } elseif (in_array($castType, ['date', 'datetime']) || \Illuminate\Support\Str::endsWith($field, '_at')) {
+                            $rules[] = 'date';
+                        } else {
+                            $rules[] = 'string';
+                            // Drop the max:255 limit for fields that are likely text areas
+                            if (!in_array($field, ['description', 'body', 'content', 'notes'])) {
+                                $rules[] = 'max:255';
+                            }
                         }
-                    }
 
-                    $implodedRules = implode('|', $rules);
-                    $rulesString .= "'{$field}' => '{$implodedRules}',\n            ";
-                }
-            } else {
+                        $implodedRules = implode('|', $rules);
+                        $rulesString .= "'{$field}' => '{$implodedRules}',\n            ";
+                    }
+                } 
+            }
+            else {
                 $rulesString = "// Define your validation rules here\n";
             }
 
@@ -137,13 +188,17 @@ class MakeCrudCommand extends Command
         if ($all || $this->option('controller')) {
             $controllerPath = $roleFolder ? "Http/Controllers/{$roleFolder}" : "Http/Controllers";
             $requestNamespace = $roleFolder ? "App\Http\Requests\\{$roleFolder}" : "App\Http\Requests";
+            
+            // Switch stub based on API option
+            $stubName = $this->option('api') ? 'controller.api.stub' : 'controller.stub';
 
-            $this->generateFile($name, $controllerPath, "{$name}Controller", 'controller.stub', $roleFolder, [
+            $this->generateFile($name, $controllerPath, "{$name}Controller", $stubName, $roleFolder, [
                 '{{ requestNamespace }}' => $requestNamespace
             ]);
         }
 
-        if ($all || $this->option('views')) {
+        // Only generate views if NOT in API mode
+        if (!$this->option('api') && ($all || $this->option('views'))) {
             $this->generateErrorComponent();
 
             $this->generateView($name, 'create', $role, $layoutName);
@@ -151,10 +206,13 @@ class MakeCrudCommand extends Command
             $this->generateView($name, 'index', $role, $layoutName);
             $this->generateView($name, 'show', $role, $layoutName);
             $this->generateView($name, 'edit', $role, $layoutName);
+
+            $this->generateActionComponent($name, $role);
+            $this->generateDataTableConfigIfNeeded($name, $role);
         }
 
         if ($all || $this->option('route')) {
-            $this->appendRoute($name, $role);
+            $this->appendRoute($name, $role, $this->option('api'));
         }
 
         $this->info("CRUD architecture for {$name} generated successfully.");
@@ -218,6 +276,7 @@ class MakeCrudCommand extends Command
         $modelNameLowerCase = strtolower($name);
         $rolePath = $role ? strtolower($role) . '/' : '';
         $viewDir = resource_path("views/{$rolePath}{$modelNameLowerCase}");
+        $modelPluralKebab = Str::kebab(Str::plural($name));
 
         File::ensureDirectoryExists($viewDir);
         $destinationPath = $viewDir . "/{$viewType}.blade.php";
@@ -261,7 +320,10 @@ class MakeCrudCommand extends Command
                     '{{ routeName }}',
                     '{{ viewPrefix }}',
                     '{{ formFields }}',
-                    '{{ layoutName }}'
+                    '{{ layoutName }}',
+                    '{{ ModelName }}',
+                    '{{ role }}',
+                    '{{ model-plural-kebab }}'
                 ],
                 [
                     $name,
@@ -269,7 +331,10 @@ class MakeCrudCommand extends Command
                     $routeName,
                     $viewPrefix,
                     $formFieldsHtml,
-                    $layoutName
+                    $layoutName,
+                    $name,
+                    $role,
+                    $modelPluralKebab
                 ],
                 $stubContent
             );
@@ -284,30 +349,32 @@ class MakeCrudCommand extends Command
     /**
      * Append generated route resource to routes/web.php.
      */
-    protected function appendRoute($name, $role = null)
+    protected function appendRoute($name, $role = null, $isApi = false)
     {
-        $path = base_path('routes/web.php');
+        $path = base_path($isApi ? 'routes/api.php' : 'routes/web.php');
         $modelNameLowerCase = strtolower($name);
 
         if ($role) {
             $roleLower = strtolower($role);
-            $roleFolder = ucfirst($roleLower); // Forces 'Admin' for the namespace
-            
+            $roleFolder = ucfirst($roleLower); 
             $controller = "\\App\\Http\\Controllers\\{$roleFolder}\\{$name}Controller::class";
             
-            // Uses $roleLower for the URL prefix/name, $role for middleware, and $controller for the class
+            $routeType = $isApi ? 'apiResource' : 'resource';
+            $middleware = $isApi ? "['auth:sanctum', 'role:{$role}']" : "['role:{$role}']";
+
             $route = <<<EOT
-                \nRoute::group(['prefix' => '{$roleLower}', 'as' => '{$roleLower}.', 'middleware' => ['role:{$role}']], function () {
-                    Route::resource('{$modelNameLowerCase}', {$controller});
+                \nRoute::group(['prefix' => '{$roleLower}', 'as' => '{$roleLower}.', 'middleware' => {$middleware}], function () {
+                    Route::{$routeType}('{$modelNameLowerCase}', {$controller});
                 });\n
-            EOT;
+                EOT;
         } else {
             $controller = "\\App\\Http\\Controllers\\{$name}Controller::class";
-            $route = "\nRoute::resource('{$modelNameLowerCase}', {$controller});\n";
+            $routeType = $isApi ? 'apiResource' : 'resource';
+            $route = "\nRoute::{$routeType}('{$modelNameLowerCase}', {$controller});\n";
         }
 
         \Illuminate\Support\Facades\File::append($path, $route);
-        $this->info("Appended route for {$name} to routes/web.php");
+        $this->info("Appended route for {$name} to " . ($isApi ? 'routes/api.php' : 'routes/web.php'));
     }
 
     /**
@@ -360,4 +427,129 @@ class MakeCrudCommand extends Command
             }
         }
     }   
+
+    protected function generateDataTableConfigIfNeeded($name, $role)
+    {
+        $roleLower = $role ? strtolower($role) : 'default';
+        $modelPluralKebab = Str::kebab(Str::plural($name));
+        $configDir = config_path("datatable/{$roleLower}");
+        $configPath = "{$configDir}/{$modelPluralKebab}.php";
+
+        if (File::exists($configPath)) {
+            return; // Config already exists
+        }
+
+        File::ensureDirectoryExists($configDir);
+
+        $fqcn = "\\App\\Models\\{$name}";
+        $hasAttributes = false;
+
+        if (class_exists($fqcn)) {
+            $reflection = new \ReflectionClass($fqcn);
+            foreach ($reflection->getProperties() as $property) {
+                if (!empty($property->getAttributes(\App\Attributes\DataTableColumn::class))) {
+                    $hasAttributes = true;
+                    break;
+                }
+            }
+        }
+
+        if ($hasAttributes) {
+            $this->info("Attributes found on {$name}. Skipping config array generation.");
+            return;
+        }
+
+        $configArray = "<?php\n\nreturn [\n    'columns' => [\n";
+        
+        if (class_exists($fqcn)) {
+            $model = new $fqcn();
+            $columns = \Illuminate\Support\Facades\Schema::getColumnListing($model->getTable());
+            $ignoredColumns = ['created_at', 'updated_at', 'deleted_at', 'remember_token', 'email_verified_at', 'password'];
+            
+            foreach ($columns as $col) {
+                if (in_array($col, $ignoredColumns)) continue;
+                
+                $label = Str::title(str_replace('_', ' ', $col));
+                $configArray .= "        [\n";
+                $configArray .= "            'label' => '{$label}',\n";
+                $configArray .= "            'field' => '{$col}',\n";
+                if ($col === 'id') {
+                    $configArray .= "            'hide' => true,\n";
+                    $configArray .= "            'searchable' => false,\n";
+                } else {
+                    $configArray .= "            'searchable' => true,\n";
+                }
+                $configArray .= "        ],\n";
+            }
+        }
+
+        // Append Action Column
+        $configArray .= "        [\n";
+        $configArray .= "            'label' => 'Action',\n";
+        $configArray .= "            'view' => '{$roleLower}.{$modelPluralKebab}.components.actions',\n";
+        $configArray .= "        ],\n";
+        $configArray .= "    ],\n";
+        $configArray .= "    'onRowClick' => [\n        // 'route' => '{$roleLower}.{$modelPluralKebab}.show',\n    ]\n];\n";
+
+        File::put($configPath, $configArray);
+        $this->info("Created DataTable config: {$configPath}");
+    }
+
+    protected function generateActionComponent($name, $role)
+    {
+        $rolePath = $role ? strtolower($role) . '/' : '';
+        $modelPluralKebab = Str::kebab(Str::plural($name));
+        $viewDir = resource_path("views/{$rolePath}{$modelPluralKebab}/components");
+
+        File::ensureDirectoryExists($viewDir);
+        $destinationPath = $viewDir . "/actions.blade.php";
+        
+        $stubPath = __DIR__ . "/../Stubs/actions.blade.stub";
+
+        if (File::exists($stubPath)) {
+            $stubContent = File::get($stubPath);
+            $roleLower = $role ? strtolower($role) : '';
+
+            $fileContent = str_replace(
+                ['{{role}}', '{{model-plural-kebab}}'],
+                [$roleLower, $modelPluralKebab],
+                $stubContent
+            );
+
+            File::put($destinationPath, $fileContent);
+            $this->info("Created Action Component: {$destinationPath}");
+        }
+    }
+
+    protected function generateBaseDataTableFiles()
+    {
+        // Generate ColumnGenerator
+        $this->copyStubToApp('data-table.column-generator.stub', app_path('DataTable/ColumnGenerator.php'));
+        
+        // Generate Livewire Component Classes
+        $this->copyStubToApp('livewire.data-table.stub', app_path('Livewire/DataTable.php'));
+        $this->copyStubToApp('livewire.data-table-filters.stub', app_path('Livewire/DataTableFilters.php'));
+        
+        // Generate Livewire Views
+        $this->copyStubToApp('livewire.view.data-table.stub', resource_path('views/livewire/data-table.blade.php'));
+        $this->copyStubToApp('livewire.view.data-table-filters.stub', resource_path('views/livewire/data-table-filters.blade.php'));
+    }
+
+    protected function copyStubToApp($stubName, $destinationPath)
+    {
+        if (!File::exists($destinationPath)) {
+            File::ensureDirectoryExists(dirname($destinationPath));
+            $stubPath = __DIR__ . '/../Stubs/' . $stubName;
+            
+            if (File::exists($stubPath)) {
+                File::copy($stubPath, $destinationPath);
+                $this->info("Generated base DataTable file: {$destinationPath}");
+            } else {
+                $this->error("Missing expected stub: {$stubPath}");
+            }
+        }
+    }
+    
+
+    
 }

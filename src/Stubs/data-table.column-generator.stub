@@ -1,0 +1,271 @@
+<?php
+
+namespace App\DataTable;
+
+use App\Attributes\DataTableColumn;
+use Exception;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Log;
+
+class ColumnGenerator
+{
+    /**
+     * Get columns for a given model.
+     *
+     * @param string $modelClass The model class name (short or FQCN).
+     * @param string|null $configPath
+     * @return array
+     */
+    public static function getColumns(string $modelClass, ?string $configPath = null): array
+    {
+        if ($configPath) {
+            return config($configPath, []);
+        }
+
+        try {
+            // --- FQCN RESOLUTION FIX ---
+            $fqcn = self::resolveModelFqcn($modelClass);
+
+            if (!class_exists($fqcn)) {
+                Log::error('ColumnGenerator: Cannot resolve model class.', ['modelClass' => $modelClass, 'resolved_fqcn' => $fqcn]);
+                throw new Exception("Model class '{$modelClass}' could not be resolved or does not exist.");
+            }
+            // --- END FQCN RESOLUTION FIX ---
+
+            // --- 1. PRIORITY: Check for PHP Class Attributes (#[DataTableColumn]) ---
+            $reflection = new \ReflectionClass($fqcn);
+            $attributeClass = DataTableColumn::class;
+
+            $attributes = class_exists($attributeClass)
+                ? $reflection->getAttributes($attributeClass)
+                : [];
+
+            if (!empty($attributes)) {
+                $columns = [];
+                foreach ($attributes as $attribute) {
+                    $columnData = $attribute->newInstance();
+                    $columns[] = [
+                        'field'      => $columnData->field,
+                        'label'      => $columnData->label,
+                        'searchable' => $columnData->searchable,
+                        'sortable'   => $columnData->sortable,
+                        'hide'       => $columnData->hidden,
+                        'view'       => $columnData->view,
+                    ];
+                }
+                return self::processConfiguredColumns($columns);
+            }
+
+            // --- 2. FALLBACK: Check Configuration File ---
+            // Use the provided configPath or fall back to the default naming convention
+            $configPath = $configPath ?? 'datatable.' . Str::kebab(Str::plural(class_basename($fqcn)));
+
+            // Try to get the configuration
+            $configuredColumns = config($configPath, []);
+
+            // Check if the configuration is a nested array with a 'columns' key
+            if (isset($configuredColumns['columns']) && is_array($configuredColumns['columns'])) {
+                $columns = $configuredColumns['columns'];
+            } else {
+                $columns = $configuredColumns;
+            }
+
+            // Process and return the columns if configuration exists
+            if (!empty($columns) && is_array($columns)) {
+                return self::processConfiguredColumns($columns);
+            }
+
+            // --- 3. LAST RESORT: Generate default columns from DB schema ---
+            Log::warning('No valid attributes or configuration found, falling back to database schema', [
+                'configPath' => $configPath,
+                'modelClass' => $fqcn
+            ]);
+
+            return self::generateDefaultColumns($fqcn);
+
+        } catch (\Exception $e) {
+            Log::error('Error in ColumnGenerator::getColumns', [
+                'error' => $e->getMessage(),
+                'modelClass' => $modelClass,
+                'configPath' => $configPath ?? 'null',
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            // Return a minimal set of columns to prevent complete failure
+            return [
+                [
+                    'label' => 'ID',
+                    'field' => 'id',
+                    'sortable' => true,
+                    'searchable' => true,
+                    'hide' => false,
+                    'format' => null,
+                ]
+            ];
+        }
+    }
+
+    /**
+     * Resolves a short model name or FQCN to the final FQCN (Public Wrapper).
+     *
+     * @param string $modelClass
+     * @return string
+     */
+    public static function resolveModelFqcnSafely(string $modelClass): string
+    {
+        return self::resolveModelFqcn($modelClass);
+    }
+
+    /**
+     * Resolves a short model name or FQCN to the final FQCN (Internal Protected Method).
+     *
+     * @param string $modelClass
+     * @return string
+     */
+    protected static function resolveModelFqcn(string $modelClass): string
+    {
+        // If the string contains a namespace separator, assume it's already an FQCN
+        if (Str::contains($modelClass, '\\')) {
+            return ltrim($modelClass, '\\');
+        }
+
+        // Otherwise, prepend the default model namespace
+        $fqcn = "App\\Models\\{$modelClass}";
+
+        // If the constructed FQCN exists, use it. Otherwise, return the original input
+        // (This allows passing short names like 'User' if they exist in App\Models)
+        return class_exists($fqcn) ? $fqcn : $modelClass;
+    }
+
+    /**
+     * Processes configured columns, adding default properties if missing.
+     *
+     * @param array $columns
+     * @return array
+     */
+    protected static function processConfiguredColumns(array $columns): array
+    {
+        return array_map(function ($column) {
+            // Ensure label exists
+            $column['label'] = $column['label'] ?? (isset($column['field']) ? Str::title(str_replace('_', ' ', $column['field'])) : '');
+
+            // Ensure searchable, sortable, and hide properties exist
+            $column['searchable'] = $column['searchable'] ?? true;
+            $column['sortable'] = $column['sortable'] ?? true;
+            $column['hide'] = $column['hide'] ?? false;
+
+            // NEW: Ensure format exists (null by default)
+            $column['format'] = $column['format'] ?? null;
+
+            return $column;
+        }, $columns);
+    }
+
+    /**
+     * Generates columns based on the database schema.
+     *
+     * @param string $modelClass
+     * @return array
+     */
+    protected static function generateFromSchema(string $modelClass): array
+    {
+        try {
+            $modelInstance = new $modelClass();
+            $tableName = $modelInstance->getTable();
+            $columns = Schema::getColumnListing($tableName);
+
+            return array_map(function ($column) {
+                return [
+                    'label' => Str::title(str_replace('_', ' ', $column)),
+                    'field' => $column,
+                    'searchable' => true,
+                    'sortable' => true,
+                    'hide' => false,
+                    'format' => null, // NEW: Default format
+                ];
+            }, $columns);
+        } catch (\Exception $e) {
+            //Log::error("Failed to generate columns from schema for {$modelClass}: " . $e->getMessage());
+            return []; // Return empty array or throw an exception
+        }
+    }
+
+    /**
+     * Generate default columns based on the model's database schema.
+     *
+     * @param string $modelClass The fully qualified class name of the model.
+     * @return array
+     */
+    protected static function generateDefaultColumns(string $modelClass): array
+    {
+        try {
+            if (!class_exists($modelClass)) {
+                throw new \Exception("Model class {$modelClass} does not exist");
+            }
+
+            $model = new $modelClass();
+
+            if (!method_exists($model, 'getTable')) {
+                throw new \Exception("Model {$modelClass} does not have a getTable method");
+            }
+
+            $table = $model->getTable();
+
+            if (!Schema::hasTable($table)) {
+                throw new \Exception("Table {$table} does not exist");
+            }
+
+            $columns = Schema::getColumnListing($table);
+
+            // Remove timestamps and remember_token by default
+            $ignoredColumns = ['updated_at', 'deleted_at', 'remember_token'];
+            $columns = array_diff($columns, $ignoredColumns);
+
+            $defaultColumns = [];
+            foreach ($columns as $column) {
+                $defaultColumns[] = [
+                    'label' => Str::title(str_replace('_', ' ', $column)),
+                    'field' => $column,
+                    'sortable' => true,
+                    'searchable' => true,
+                    'hide' => in_array($column, ['id', 'password', 'email_verified_at']),
+                    'format' => in_array($column, ['created_at', 'updated_at']) ? 'date:M d, Y H:i' : null, // NEW: Default format for timestamps
+                ];
+            }
+
+            // If no columns were generated, add a default ID column
+            if (empty($defaultColumns)) {
+                $defaultColumns[] = [
+                    'label' => 'ID',
+                    'field' => 'id',
+                    'sortable' => true,
+                    'searchable' => true,
+                    'hide' => false,
+                    'format' => null,
+                ];
+            }
+
+            return $defaultColumns;
+
+        } catch (\Exception $e) {
+            Log::error('Error generating default columns', [
+                'error' => $e->getMessage(),
+                'model' => $modelClass,
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            // Return a minimal set of columns as a last resort
+            return [
+                [
+                    'label' => 'ID',
+                    'field' => 'id',
+                    'sortable' => true,
+                    'searchable' => true,
+                    'hide' => false,
+                    'format' => null,
+                ]
+            ];
+        }
+    }
+}

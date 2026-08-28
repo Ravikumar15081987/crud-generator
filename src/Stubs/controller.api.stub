@@ -1,0 +1,47 @@
+<?php
+
+namespace {{ namespace }};
+
+use App\Http\Controllers\Controller;
+use {{ requestNamespace }}\Store{{ modelName }}Request;
+use {{ requestNamespace }}\Update{{ modelName }}Request;
+use App\Services\Contracts\{{ modelName }}ServiceInterface;
+use Illuminate\Http\JsonResponse;
+
+class {{ modelName }}Controller extends Controller
+{
+    protected $service;
+
+    public function __construct({{ modelName }}ServiceInterface $service)
+    {
+        $this->service = $service;
+    }
+
+    public function index(): JsonResponse
+    {
+        return response()->json($this->service->all());
+    }
+
+    public function store(Store{{ modelName }}Request $request): JsonResponse
+    {
+        $data = $this->service->create($request->validated());
+        return response()->json(['message' => '{{ modelName }} created successfully', 'data' => $data], 201);
+    }
+
+    public function show($id): JsonResponse
+    {
+        return response()->json($this->service->find($id));
+    }
+
+    public function update(Update{{ modelName }}Request $request, $id): JsonResponse
+    {
+        $data = $this->service->update($id, $request->validated());
+        return response()->json(['message' => '{{ modelName }} updated successfully', 'data' => $data]);
+    }
+
+    public function destroy($id): JsonResponse
+    {
+        $this->service->delete($id);
+        return response()->json(['message' => '{{ modelName }} deleted successfully']);
+    }
+}

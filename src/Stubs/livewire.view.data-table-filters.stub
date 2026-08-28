@@ -1,0 +1,145 @@
+<div class="mb-3 bg-white p-2 rounded-custom border border-light-subtle shadow-sm">
+    <form wire:submit.prevent="applyFilters" class="d-flex flex-wrap align-items-center gap-2 m-0">
+
+        @foreach ($filtersConfig as $filter)
+            <div class="filter-item flex-grow-1" style="min-width: 180px;">
+
+                {{-- === 1. SELECT / SELECT2 INPUTS === --}}
+                @if (($filter['type'] ?? 'select') === 'select')
+                    <div wire:ignore>
+                        <select id="{{ $filter['field'] }}Filter"
+                                class="form-select form-select-sm sleek-filter-input {{ ($filter['library'] ?? '') === 'select2' ? 'select2' : '' }}"
+                                wire:model.live="filters.{{ $filter['field'] }}"
+                                data-livewire-field="{{ $filter['field'] }}">
+                            <option value="">{{ $filter['label'] ?? 'All' }}</option>
+                            @foreach ($filter['options'] as $optionValue => $optionLabel)
+                                <option value="{{ $optionValue }}">{{ $optionLabel }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    {{-- === 2. TEXT / SEARCH INPUTS === --}}
+                @elseif (($filter['type'] ?? 'text') === 'text')
+                    <div class="position-relative">
+                        <i class="ri-search-line position-absolute top-50 start-0 translate-middle-y ms-2 text-muted" style="font-size: 0.85rem;"></i>
+                        <input type="text"
+                               id="{{ $filter['field'] }}Filter"
+                               class="form-control form-control-sm sleek-filter-input ps-4"
+                               placeholder="{{ $filter['label'] }}"
+                               wire:model.live.debounce.500ms="filters.{{ $filter['field'] }}">
+                    </div>
+
+                    {{-- === 3. DATE / FLATPICKR INPUTS === --}}
+                @elseif ($filter['type'] === 'date')
+                    <div class="position-relative">
+                        <input type="text"
+                               id="{{ $filter['field'] }}Filter"
+                               class="form-control form-control-sm sleek-filter-input {{ ($filter['library'] ?? '') === 'flatpickr' ? 'flatpickr-date' : '' }}"
+                               placeholder="dd-mm-yyyy"
+                               wire:model.live="filters.{{ $filter['field'] }}">
+                        <i class="ri-calendar-line position-absolute top-50 end-0 translate-middle-y me-2 text-muted" style="font-size: 0.85rem;"></i>
+                    </div>
+
+                    {{-- === 4. NUMBER / RANGE INPUTS === --}}
+                @elseif ($filter['type'] === 'number')
+                    <input type="number"
+                           id="{{ $filter['field'] }}Filter"
+                           class="form-control form-control-sm sleek-filter-input"
+                           placeholder="{{ $filter['label'] }}"
+                           wire:model.live.debounce.500ms="filters.{{ $filter['field'] }}">
+                @endif
+            </div>
+        @endforeach
+
+        {{-- Filter & Reset Buttons --}}
+        <div class="d-flex gap-2 ms-auto">
+            <button type="button" class="btn btn-sm btn-light border sleek-btn-outline px-2" wire:click="resetFilters" title="Clear Filters">
+                <i class="ri-refresh-line"></i>
+            </button>
+            <button type="submit" class="btn btn-sm sleek-btn-primary px-4 fw-medium text-white">
+                Filter
+            </button>
+        </div>
+    </form>
+
+    <style>
+        .rounded-custom { border-radius: 8px !important; }
+        .sleek-filter-input {
+            height: 36px;
+            border-radius: 8px !important;
+            border: 1px solid #e2e8f0;
+            color: #334155;
+            box-shadow: none !important;
+            font-size: 0.85rem;
+            transition: border-color 0.2s;
+        }
+        .sleek-filter-input:focus { border-color: #293246; }
+
+        .sleek-btn-primary {
+            background-color: #293246;
+            border-color: #293246;
+            border-radius: 8px !important;
+            height: 36px;
+            display: flex;
+            align-items: center;
+        }
+        .sleek-btn-primary:hover { background-color: #1e2536; }
+
+        .sleek-btn-outline {
+            border-radius: 8px !important;
+            height: 36px;
+            color: #64748b;
+            display: flex;
+            align-items: center;
+        }
+    </style>
+</div>
+
+{{-- === JAVASCRIPT INTEGRATION === --}}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.select2, .flatpickr-date, [wire\\:model^="filters."]').forEach(el => { el.value = ''; });
+    });
+
+    document.addEventListener('livewire:initialized', () => {
+        const componentId = @this.id;
+
+        function initializeSelect2() {
+            $('.select2').each(function () {
+                const selectElement = $(this);
+                const livewireField = selectElement.data('livewire-field');
+                const componentInstance = Livewire.find(componentId);
+                if (!selectElement.data('select2')) {
+                    selectElement.select2({ width: '100%', dropdownParent: selectElement.parent() });
+                    const initialValue = componentInstance.get(`filters.${livewireField}`);
+                    selectElement.val(initialValue).trigger('change');
+                }
+                if (!selectElement.data('livewire-change-handler')) {
+                    selectElement.on('change', function (e) {
+                        if (livewireField) componentInstance.set(`filters.${livewireField}`, $(this).val());
+                    });
+                    selectElement.data('livewire-change-handler', true);
+                }
+            });
+        }
+
+        function initializeFlatpickr() {
+            if (typeof flatpickr === 'undefined') return;
+            $('.flatpickr-date').each(function () {
+                const element = this;
+                const livewireField = element.getAttribute('wire:model.live').split('.').pop();
+                flatpickr(element, { dateFormat: "Y-m-d", onChange: function(selectedDates, dateStr, instance) { Livewire.find(componentId).set(`filters.${livewireField}`, dateStr); } });
+            });
+        }
+
+        initializeSelect2();
+        initializeFlatpickr();
+
+        Livewire.on('dom-updated', () => { initializeFlatpickr(); initializeSelect2(); });
+        document.addEventListener('filtersResetVisuals', function () {
+            $('.select2').val('').trigger('change');
+            document.querySelectorAll('input[wire\\:model^="filters."]').forEach(input => { input.value = ''; });
+            if (typeof flatpickr !== 'undefined' && flatpickr.instances) { flatpickr.instances.forEach(instance => instance.clear()); }
+        });
+    });
+</script>
