@@ -271,12 +271,17 @@ class MakeCrudCommand extends Command
     /**
      * Generate Blade views and dynamically build form fields from Model fillable array.
      */
+    /**
+     * Generate Blade views and dynamically build form fields from Model fillable array.
+     */
     protected function generateView($name, $viewType, $role = null, $layoutName = 'layouts.app')
     {
         $modelNameLowerCase = strtolower($name);
-        $rolePath = $role ? strtolower($role) . '/' : '';
-        $viewDir = resource_path("views/{$rolePath}{$modelNameLowerCase}");
         $modelPluralKebab = Str::kebab(Str::plural($name));
+        $rolePath = $role ? strtolower($role) . '/' : '';
+        
+        // FIX: Use $modelPluralKebab here so all views land inside resource_path("views/posts")
+        $viewDir = resource_path("views/{$rolePath}{$modelPluralKebab}");
 
         File::ensureDirectoryExists($viewDir);
         $destinationPath = $viewDir . "/{$viewType}.blade.php";
@@ -345,6 +350,81 @@ class MakeCrudCommand extends Command
             $this->error("Stub not found: {$stubPath}");
         }
     }
+    
+    // protected function generateView($name, $viewType, $role = null, $layoutName = 'layouts.app')
+    // {
+    //     $modelNameLowerCase = strtolower($name);
+    //     $rolePath = $role ? strtolower($role) . '/' : '';
+    //     $viewDir = resource_path("views/{$rolePath}{$modelNameLowerCase}");
+    //     $modelPluralKebab = Str::kebab(Str::plural($name));
+
+    //     File::ensureDirectoryExists($viewDir);
+    //     $destinationPath = $viewDir . "/{$viewType}.blade.php";
+
+    //     $stubPath = __DIR__ . "/../Stubs/view.{$viewType}.stub";
+
+    //     if (File::exists($stubPath)) {
+    //         $stubContent = File::get($stubPath);
+
+    //         $routePrefix = $role ? strtolower($role) . '.' : '';
+    //         $routeName = $routePrefix . $modelNameLowerCase;
+    //         $viewPrefix = $role ? strtolower($role) . '.' : '';
+
+    //         $formFieldsHtml = '';
+    //         if ($viewType === '_form') {
+    //             $modelClass = "\\App\\Models\\{$name}";
+    //             if (class_exists($modelClass)) {
+    //                 $model = new $modelClass();
+    //                 $fillable = $model->getFillable();
+
+    //                 foreach ($fillable as $field) {
+    //                     $label = ucwords(str_replace('_', ' ', $field));
+    //                     $formFieldsHtml .= <<<HTML
+    //                         <div class="col-md-6">
+    //                             <label class="form-label">{$label} *</label>
+    //                             <input type="text" name="{$field}" class="form-control @error('{$field}') is-invalid @enderror" value="{{ old('{$field}', \${$modelNameLowerCase}->{$field} ?? '') }}" placeholder="e.g. {$label}">
+    //                             <x-field-error field="{$field}" />
+    //                         </div>\n
+    //                     HTML;
+    //                 }
+    //             }
+    //             if (empty($formFieldsHtml)) {
+    //                 $formFieldsHtml = "                <!-- Define your \$fillable array in {$name}.php to auto-generate inputs -->\n";
+    //             }
+    //         }
+
+    //         $fileContent = str_replace(
+    //             [
+    //                 '{{ modelName }}',
+    //                 '{{ modelNameLowerCase }}',
+    //                 '{{ routeName }}',
+    //                 '{{ viewPrefix }}',
+    //                 '{{ formFields }}',
+    //                 '{{ layoutName }}',
+    //                 '{{ ModelName }}',
+    //                 '{{ role }}',
+    //                 '{{ model-plural-kebab }}'
+    //             ],
+    //             [
+    //                 $name,
+    //                 $modelNameLowerCase,
+    //                 $routeName,
+    //                 $viewPrefix,
+    //                 $formFieldsHtml,
+    //                 $layoutName,
+    //                 $name,
+    //                 $role,
+    //                 $modelPluralKebab
+    //             ],
+    //             $stubContent
+    //         );
+
+    //         File::put($destinationPath, $fileContent);
+    //         $this->info("Created: {$destinationPath}");
+    //     } else {
+    //         $this->error("Stub not found: {$stubPath}");
+    //     }
+    // }
 
     /**
      * Append generated route resource to routes/web.php.
@@ -497,27 +577,44 @@ class MakeCrudCommand extends Command
 
     protected function generateActionComponent($name, $role)
     {
+        // Define the views directory path consistently using plural snake/kebab case
+        $modelNameLowerCase = strtolower($name);
         $rolePath = $role ? strtolower($role) . '/' : '';
-        $modelPluralKebab = Str::kebab(Str::plural($name));
-        $viewDir = resource_path("views/{$rolePath}{$modelPluralKebab}/components");
+        $viewPath = resource_path("views/{$rolePath}" . Str::plural($modelNameLowerCase));
+        $componentsPath = $viewPath . '/components';
 
-        File::ensureDirectoryExists($viewDir);
-        $destinationPath = $viewDir . "/actions.blade.php";
-        
-        $stubPath = __DIR__ . "/../Stubs/actions.blade.stub";
+        // Ensure directories exist cleanly without mismatched names
+        File::ensureDirectoryExists($componentsPath);
+        $destinationPath = $componentsPath . '/action.blade.php';
+
+        // Use your action stub file name here (e.g., view.action.stub or actions.blade.stub)
+        $stubPath = __DIR__ . "/../Stubs/view.action.stub";
 
         if (File::exists($stubPath)) {
             $stubContent = File::get($stubPath);
-            $roleLower = $role ? strtolower($role) : '';
+
+            $routePrefix = $role ? strtolower($role) . '.' : '';
+            $routeName = $routePrefix . $modelNameLowerCase;
+            $modelNamePluralLowerCase = Str::plural($modelNameLowerCase);
 
             $fileContent = str_replace(
-                ['{{role}}', '{{model-plural-kebab}}'],
-                [$roleLower, $modelPluralKebab],
+                [
+                    '{{ modelNamePluralLowerCase }}', 
+                    '{{ modelNameSingularLowerCase }}',
+                    '{{ routeName }}'
+                ],
+                [
+                    $modelNamePluralLowerCase, 
+                    $modelNameLowerCase,
+                    $routeName
+                ],
                 $stubContent
             );
 
             File::put($destinationPath, $fileContent);
             $this->info("Created Action Component: {$destinationPath}");
+        } else {
+            $this->error("Stub not found: {$stubPath}");
         }
     }
 
@@ -525,7 +622,7 @@ class MakeCrudCommand extends Command
     {
         // Generate DataTableColumn Attribute
         $this->copyStubToApp('data-table.attribute.stub', app_path('Attributes/DataTableColumn.php'));
-        
+
         // Generate ColumnGenerator
         $this->copyStubToApp('data-table.column-generator.stub', app_path('DataTable/ColumnGenerator.php'));
         
