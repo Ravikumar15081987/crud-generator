@@ -29,21 +29,21 @@ class {{ modelName }}Service implements {{ modelName }}ServiceInterface
 
     public function create(array $data)
     {
-        return $this->safeTransaction(function () use ($data) {
+        return $this->executeSafeTransaction(function () use ($data) {
             return $this->{{ modelNameLowerCase }}Repository->create($data);
         });
     }
 
     public function update($id, array $data)
     {
-        return $this->safeTransaction(function () use ($id, $data) {
+        return $this->executeSafeTransaction(function () use ($id, $data) {
             return $this->{{ modelNameLowerCase }}Repository->update($id, $data);
         });
     }
 
     public function delete($id)
     {
-        return $this->safeTransaction(function () use ($id) {
+        return $this->executeSafeTransaction(function () use ($id) {
             return $this->{{ modelNameLowerCase }}Repository->delete($id);
         });
     }

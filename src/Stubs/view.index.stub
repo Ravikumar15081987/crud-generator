@@ -14,7 +14,7 @@
         <!-- Livewire Filters Component -->
         <livewire:data-table-filters 
             datatableId="{{ modelName }}TableId" 
-            :config="$filtersConfig" 
+            :config="$filtersConfig ?? []" 
         />
 
         <!-- Livewire DataTable Component -->
