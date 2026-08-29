@@ -519,16 +519,78 @@ class MakeCrudCommand extends Command
         }
     }   
 
+    // protected function generateDataTableConfigIfNeeded($name, $role)
+    // {
+    //     $roleLower = $role ? strtolower($role) : 'default';
+    //     $modelPluralKebab = Str::kebab(Str::plural($name));
+    //     $configDir = config_path("datatable/{$roleLower}");
+    //     $configPath = "{$configDir}/{$modelPluralKebab}.php";
+
+    //     if (File::exists($configPath)) {
+    //         return; // Config already exists
+    //     }
+
+    //     File::ensureDirectoryExists($configDir);
+
+    //     $fqcn = "\\App\\Models\\{$name}";
+    //     $hasAttributes = false;
+
+    //     if (class_exists($fqcn)) {
+    //         $reflection = new \ReflectionClass($fqcn);
+    //         foreach ($reflection->getProperties() as $property) {
+    //             if (!empty($property->getAttributes(\App\Attributes\DataTableColumn::class))) {
+    //                 $hasAttributes = true;
+    //                 break;
+    //             }
+    //         }
+    //     }
+
+    //     if ($hasAttributes) {
+    //         $this->info("Attributes found on {$name}. Skipping config array generation.");
+    //         return;
+    //     }
+
+    //     $configArray = "<?php\n\nreturn [\n    'columns' => [\n";
+        
+    //     if (class_exists($fqcn)) {
+    //         $model = new $fqcn();
+    //         $columns = \Illuminate\Support\Facades\Schema::getColumnListing($model->getTable());
+    //         $ignoredColumns = ['created_at', 'updated_at', 'deleted_at', 'remember_token', 'email_verified_at', 'password'];
+            
+    //         foreach ($columns as $col) {
+    //             if (in_array($col, $ignoredColumns)) continue;
+                
+    //             $label = Str::title(str_replace('_', ' ', $col));
+    //             $configArray .= "        [\n";
+    //             $configArray .= "            'label' => '{$label}',\n";
+    //             $configArray .= "            'field' => '{$col}',\n";
+    //             if ($col === 'id') {
+    //                 $configArray .= "            'hide' => true,\n";
+    //                 $configArray .= "            'searchable' => false,\n";
+    //             } else {
+    //                 $configArray .= "            'searchable' => true,\n";
+    //             }
+    //             $configArray .= "        ],\n";
+    //         }
+    //     }
+
+    //     // Append Action Column
+    //     $configArray .= "        [\n";
+    //     $configArray .= "            'label' => 'Action',\n";
+    //     $configArray .= "            'view' => '{$roleLower}.{$modelPluralKebab}.components.action',\n"; 
+    //     $configArray .= "        ],\n";
+    //     $configArray .= "    'onRowClick' => [\n        // 'route' => '{$roleLower}.{$modelPluralKebab}.show',\n    ]\n];\n";
+
+    //     File::put($configPath, $configArray);
+    //     $this->info("Created DataTable config: {$configPath}");
+    // }
+
     protected function generateDataTableConfigIfNeeded($name, $role)
     {
         $roleLower = $role ? strtolower($role) : 'default';
         $modelPluralKebab = Str::kebab(Str::plural($name));
         $configDir = config_path("datatable/{$roleLower}");
         $configPath = "{$configDir}/{$modelPluralKebab}.php";
-
-        if (File::exists($configPath)) {
-            return; // Config already exists
-        }
 
         File::ensureDirectoryExists($configDir);
 
@@ -574,15 +636,15 @@ class MakeCrudCommand extends Command
             }
         }
 
-        // Append Action Column
+        // Append Action Column (Singular 'action')
         $configArray .= "        [\n";
         $configArray .= "            'label' => 'Action',\n";
         $configArray .= "            'view' => '{$roleLower}.{$modelPluralKebab}.components.action',\n"; 
         $configArray .= "        ],\n";
-        $configArray .= "    'onRowClick' => [\n        // 'route' => '{$roleLower}.{$modelPluralKebab}.show',\n    ]\n];\n";
+        $configArray .= "    ],\n    'onRowClick' => [\n        // 'route' => '{$roleLower}.{$modelPluralKebab}.show',\n    ]\n];\n";
 
         File::put($configPath, $configArray);
-        $this->info("Created DataTable config: {$configPath}");
+        $this->info("Created/Updated DataTable config: {$configPath}");
     }
 
     protected function generateActionComponent($name, $role)
