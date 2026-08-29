@@ -1,0 +1,19 @@
+<?php
+
+namespace App\Services\Contracts;
+
+use Illuminate\Database\Eloquent\Model;
+
+interface ProcessBase64ImagesServiceInterface
+{
+    /**
+     * Parse HTML content, extract Base64 images, upload them via Spatie MediaLibrary, 
+     * and replace the src with the uploaded image URL.
+     *
+     * @param string|null $htmlContent
+     * @param Model $model
+     * @param string $collectionName
+     * @return string|null
+     */
+    public function process(?string $htmlContent, Model $model, string $collectionName = 'default'): ?string;
+}

@@ -34,14 +34,21 @@ class MakeCrudCommand extends Command
 
     public function handle()
     {
-        // 1. Check for spatie/laravel-permission package requirement
+        // 1. Enforce Livewire Requirement
+        if (!class_exists(\Livewire\LivewireServiceProvider::class)) {
+            $this->error('Livewire is required to use this CRUD generator.');
+            $this->line('Please install it using: composer require livewire/livewire');
+            return self::FAILURE;
+        }
+
+        // 2. Check for spatie/laravel-permission package requirement
         if (!class_exists(\Spatie\Permission\Models\Role::class)) {
             $this->error('Error: spatie/laravel-permission package is required to run this CRUD generator.');
             $this->warn('Please install it first using: composer require spatie/laravel-permission');
             return 1;
         }
 
-        // 2. Check for devrabiul/laravel-toaster-magic requirement
+        // 3. Check for devrabiul/laravel-toaster-magic requirement
         if (!class_exists(\Devrabiul\ToastMagic\Facades\ToastMagic::class)) {
             $this->error('Error: devrabiul/laravel-toaster-magic package is required for UI notifications.');
             $this->warn('Please install it first using: composer require devrabiul/laravel-toaster-magic');
@@ -53,6 +60,7 @@ class MakeCrudCommand extends Command
         // 3. Generate base Facade and Service files if they don't exist
         $this->generateUiNotifyBaseFiles();
         $this->generateBaseDataTableFiles();
+        $this->generateBaseImageProcessorFiles();
 
         $name = ucfirst($this->argument('name'));
 
@@ -204,6 +212,7 @@ class MakeCrudCommand extends Command
             $this->generateView($name, 'create', $role, $layoutName);
             $this->generateView($name, '_form', $role, $layoutName);
             $this->generateView($name, 'index', $role, $layoutName);
+            $this->generateView($name, 'trashed', $role, $layoutName);
             $this->generateView($name, 'show', $role, $layoutName);
             $this->generateView($name, 'edit', $role, $layoutName);
 
@@ -218,55 +227,6 @@ class MakeCrudCommand extends Command
         $this->info("CRUD architecture for {$name} generated successfully.");
         return 0;
     }
-
-    /**
-     * Generate class files from stubs with dynamic replacements.
-     */
-    // protected function generateFile($name, $path, $className, $stubName, $role = null, $extraReplacements = [])
-    // {
-    //     $stubPath = __DIR__ . '/../Stubs/' . $stubName;
-    //     $destinationPath = app_path("{$path}/{$className}.php");
-
-    //     File::ensureDirectoryExists(dirname($destinationPath));
-
-    //     if (!File::exists($stubPath)) {
-    //         $this->error("Stub not found: {$stubPath}");
-    //         return;
-    //     }
-
-    //     $stubContent = File::get($stubPath);
-
-    //     $modelName = $name;
-    //     $modelNameLowerCase = strtolower($name);
-    //     $modelNamePluralLowerCase = Str::plural($modelNameLowerCase);
-
-    //     $roleFolder = $role ? ucfirst(strtolower($role)) : null;
-    //     $namespace = $roleFolder ? "App\Http\Controllers\\{$roleFolder}" : "App\Http\Controllers";
-    //     $viewPrefix = $roleFolder ? strtolower($roleFolder) . '.' : '';
-    //     $requestNamespace = $roleFolder ? "App\Http\Requests\\{$roleFolder}" : "App\Http\Requests";        
-
-    //     $search = [
-    //         '{{ class }}', '{{ modelName }}', '{{ model }}',
-    //         '{{ modelNameLowerCase }}', '{{ modelNamePluralLowerCase }}',
-    //         '{{ namespace }}', '{{ viewPrefix }}', '{{ requestNamespace }}'
-    //     ];
-
-    //     $replace = [
-    //         $className, $modelName, $modelName,
-    //         $modelNameLowerCase, $modelNamePluralLowerCase,
-    //         $namespace, $viewPrefix, $requestNamespace
-    //     ];
-        
-    //     foreach ($extraReplacements as $key => $value) {
-    //         $search[] = $key;
-    //         $replace[] = $value;
-    //     }
-
-    //     $fileContent = str_replace($search, $replace, $stubContent);
-
-    //     File::put($destinationPath, $fileContent);
-    //     $this->info("Created: {$destinationPath}");
-    // }
 
     protected function generateFile($name, $path, $className, $stubName, $role = null, $extraReplacements = [])
     {
@@ -363,12 +323,12 @@ class MakeCrudCommand extends Command
                         // 1. Smart Image/File Uploads
                         if (in_array($field, ['image', 'photo', 'avatar', 'document', 'file', 'logo'])) {
                             $formFieldsHtml .= <<<HTML
-                            <div class="col-md-6 mb-3">
-                                <label for="{$field}" class="form-label">{$label}</label>
-                                <input type="file" name="{$field}" class="form-control @error('{$field}') is-invalid @enderror" id="{$field}">
-                                <x-field-error field="{$field}" />
-                            </div>\n
-HTML;
+                                <div class="col-md-6 mb-3">
+                                    <label for="{$field}" class="form-label">{$label}</label>
+                                    <input type="file" name="{$field}" class="form-control @error('{$field}') is-invalid @enderror" id="{$field}">
+                                    <x-field-error field="{$field}" />
+                                </div>\n
+                            HTML;
                         } 
                         // 2. Smart Relationship Dropdowns
                         elseif (\Illuminate\Support\Str::endsWith($field, '_id')) {
@@ -403,15 +363,25 @@ HTML;
                                 </div>\n
                             HTML;
                         }
-                        // 4. Standard Text Inputs
+                        // 4. Standard/Date/Rich Text Inputs (Using generateFormField)
                         else {
-                            $formFieldsHtml .= <<<HTML
-                                <div class="col-md-6 mb-3">
-                                    <label for="{$field}" class="form-label">{$label} *</label>
-                                    <input type="text" name="{$field}" class="form-control @error('{$field}') is-invalid @enderror" id="{$field}" value="{{ old('{$field}', \${$modelNameLowerCase}->{$field} ?? '') }}" placeholder="e.g. {$label}">
-                                    <x-field-error field="{$field}" />
-                                </div>\n
-                            HTML;
+                            $dataType = 'string';
+                            
+                            // 1. Check if the database column type is a text variant
+                            $isTextColumn = in_array(strtolower($castType), ['text', 'mediumtext', 'longtext']);
+                            
+                            // 2. Check if the field name is commonly used for rich text
+                            $isRichTextField = in_array($field, ['description', 'body', 'content', 'notes']);
+
+                            if ($isTextColumn || $isRichTextField) {
+                                $dataType = 'text'; 
+                            } 
+                            // Map date/datetime based on casts
+                            elseif (in_array($castType, ['date', 'datetime'])) {
+                                $dataType = $castType;
+                            }
+
+                            $formFieldsHtml .= "\n" . $this->generateFormField($field, $dataType);
                         }
                     }
                 }
@@ -447,6 +417,11 @@ HTML;
                 $stubContent
             );
 
+            // Append script/styles if TinyMCE was used in the form
+            if ($viewType === '_form' && str_contains($formFieldsHtml, 'tinymce-editor')) {
+                $fileContent .= "\n" . $this->getTinyMceScriptStylesStub();
+            }
+
             \Illuminate\Support\Facades\File::put($destinationPath, $fileContent);
             $this->info("Created: {$destinationPath}");
         } else {
@@ -460,60 +435,38 @@ HTML;
     protected function appendRoute($name, $role = null, $isApi = false)
     {
         $path = base_path($isApi ? 'routes/api.php' : 'routes/web.php');
-        
-        // Define the route URL/name in plural kebab-case (e.g., 'posts' or 'blog-posts')
         $routeResourceName = \Illuminate\Support\Str::kebab(\Illuminate\Support\Str::plural($name));
 
         if ($role) {
             $roleLower = strtolower($role);
             $roleFolder = ucfirst($roleLower); 
             $controller = "\\App\\Http\\Controllers\\{$roleFolder}\\{$name}Controller::class";
-            
             $routeType = $isApi ? 'apiResource' : 'resource';
             $middleware = $isApi ? "['auth:sanctum', 'role:{$role}']" : "['role:{$role}']";
 
             $route = <<<EOT
                 \nRoute::group(['prefix' => '{$roleLower}', 'as' => '{$roleLower}.', 'middleware' => {$middleware}], function () {
+                    Route::get('{$routeResourceName}/trashed', [{$controller}, 'trashed'])->name('{$routeResourceName}.trashed');
+                    Route::post('{$routeResourceName}/{id}/restore', [{$controller}, 'restore'])->name('{$routeResourceName}.restore');
+                    Route::delete('{$routeResourceName}/{id}/force-delete', [{$controller}, 'forceDelete'])->name('{$routeResourceName}.force-delete');
                     Route::{$routeType}('{$routeResourceName}', {$controller});
                 });\n
             EOT;
         } else {
             $controller = "\\App\\Http\\Controllers\\{$name}Controller::class";
             $routeType = $isApi ? 'apiResource' : 'resource';
-            $route = "\nRoute::{$routeType}('{$routeResourceName}', {$controller});\n";
+            
+            $route = <<<EOT
+                \nRoute::get('{$routeResourceName}/trashed', [{$controller}, 'trashed'])->name('{$routeResourceName}.trashed');
+                Route::post('{$routeResourceName}/{id}/restore', [{$controller}, 'restore'])->name('{$routeResourceName}.restore');
+                Route::delete('{$routeResourceName}/{id}/force-delete', [{$controller}, 'forceDelete'])->name('{$routeResourceName}.force-delete');
+                Route::{$routeType}('{$routeResourceName}', {$controller});\n
+            EOT;
         }
 
         \Illuminate\Support\Facades\File::append($path, $route);
-        $this->info("Appended route for {$name} to " . ($isApi ? 'routes/api.php' : 'routes/web.php'));
+        $this->info("Appended routes (including soft deletes) for {$name} to " . ($isApi ? 'routes/api.php' : 'routes/web.php'));
     }
-
-    // protected function appendRoute($name, $role = null, $isApi = false)
-    // {
-    //     $path = base_path($isApi ? 'routes/api.php' : 'routes/web.php');
-    //     $modelNameLowerCase = strtolower($name);
-
-    //     if ($role) {
-    //         $roleLower = strtolower($role);
-    //         $roleFolder = ucfirst($roleLower); 
-    //         $controller = "\\App\\Http\\Controllers\\{$roleFolder}\\{$name}Controller::class";
-            
-    //         $routeType = $isApi ? 'apiResource' : 'resource';
-    //         $middleware = $isApi ? "['auth:sanctum', 'role:{$role}']" : "['role:{$role}']";
-
-    //         $route = <<<EOT
-    //             \nRoute::group(['prefix' => '{$roleLower}', 'as' => '{$roleLower}.', 'middleware' => {$middleware}], function () {
-    //                 Route::{$routeType}('{$modelNameLowerCase}', {$controller});
-    //             });\n
-    //             EOT;
-    //     } else {
-    //         $controller = "\\App\\Http\\Controllers\\{$name}Controller::class";
-    //         $routeType = $isApi ? 'apiResource' : 'resource';
-    //         $route = "\nRoute::{$routeType}('{$modelNameLowerCase}', {$controller});\n";
-    //     }
-
-    //     \Illuminate\Support\Facades\File::append($path, $route);
-    //     $this->info("Appended route for {$name} to " . ($isApi ? 'routes/api.php' : 'routes/web.php'));
-    // }
 
     /**
      * Create the UiNotify Facade and Service if they don't already exist.
@@ -693,6 +646,147 @@ HTML;
             } else {
                 $this->error("Missing expected stub: {$stubPath}");
             }
+        }
+    }
+
+    protected function generateFormField(string $columnName, string $dataType): string
+    {
+        $label = ucwords(str_replace('_', ' ', $columnName));
+        $modelVar = '$' . strtolower($this->argument('name'));
+
+        // HTML5 DateTime Input
+        if (in_array($dataType, ['datetime', 'timestamp'])) {
+            return <<<HTML
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-micro text-dark mb-2" for="{$columnName}">{$label}</label>
+                        <input type="datetime-local" name="{$columnName}" id="{$columnName}" class="form-control filter-input py-2 px-3 @error('{$columnName}') is-invalid @enderror" value="{{ old('{$columnName}', isset({$modelVar}) && {$modelVar}->{$columnName} ? {$modelVar}->{$columnName}->format('Y-m-d\TH:i') : '') }}">
+                        @error('{$columnName}') <div class="invalid-feedback mt-1 small">{{ \$message }}</div> @enderror
+                    </div>
+            HTML;
+        }
+
+        // HTML5 Date Input
+        if ($dataType === 'date') {
+            return <<<HTML
+                <div class="col-md-6 mb-3">
+                    <label class="form-label text-micro text-dark mb-2" for="{$columnName}">{$label}</label>
+                    <input type="date" name="{$columnName}" id="{$columnName}" class="form-control filter-input py-2 px-3 @error('{$columnName}') is-invalid @enderror" value="{{ old('{$columnName}', isset({$modelVar}) && {$modelVar}->{$columnName} ? {$modelVar}->{$columnName}->format('Y-m-d') : '') }}">
+                    @error('{$columnName}') <div class="invalid-feedback mt-1 small">{{ \$message }}</div> @enderror
+                </div>
+            HTML;
+        }
+
+        // TinyMCE Rich Text Area (Text / LongText)
+        if (in_array($dataType, ['text', 'mediumtext', 'longtext'])) {
+            return <<<HTML
+                <div class="col-12 mb-4">
+                    <label class="form-label text-micro text-dark mb-2" for="{$columnName}">{$label}</label>
+                    <textarea name="{$columnName}" class="form-control filter-input py-2 px-3 tinymce-editor" rows="10">{{ old('{$columnName}', {$modelVar}->{$columnName} ?? '') }}</textarea>
+                    @error('{$columnName}') <div class="invalid-feedback mt-1 small">{{ \$message }}</div> @enderror
+                </div>
+            HTML;
+        }
+
+        // Default Text Input
+        return <<<HTML
+            <div class="col-md-6 mb-3">
+                <label class="form-label text-micro text-dark mb-2" for="{$columnName}">{$label}</label>
+                <input type="text" name="{$columnName}" id="{$columnName}" class="form-control filter-input py-2 px-3 @error('{$columnName}') is-invalid @enderror" value="{{ old('{$columnName}') ?? ({$modelVar}->{$columnName} ?? '') }}">
+                @error('{$columnName}') <div class="invalid-feedback mt-1 small">{{ \$message }}</div> @enderror
+            </div>
+        HTML;
+    }
+
+    protected function getTinyMceScriptStylesStub(): string
+    {
+        return <<<HTML
+            @section('page-style')
+                <style>
+                    .tox-statusbar__branding, .tox-statusbar__help-text, .tox-promotion, .tox-statusbar__right-container span { display: none; }
+                    .tox .tox-edit-area__iframe { background-color: #fbfbfb !important; border: 0; box-sizing: border-box; flex: 1; height: 100%; position: absolute; width: 100%; }
+                </style>
+            @endsection
+
+            @section('page_script')
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/tinymce/7.6.0/tinymce.min.js"></script>
+            <script>
+                document.addEventListener('DOMContentLoaded', function() {        
+                    // TINYMCE INITIALIZATION
+                    if (typeof tinymce !== 'undefined') {
+                        tinymce.init({
+                            selector: '.tinymce-editor',
+                            license_key: 'gpl',
+                            height: 400,
+                            menubar: true,
+                            plugins: [
+                                'advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'preview',
+                                'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
+                                'insertdatetime', 'media', 'table', 'code', 'wordcount'
+                            ],
+                            toolbar: 'undo redo | blocks | bold italic forecolor | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | removeformat | code',
+                            file_picker_types: 'image',
+                            file_picker_callback: (cb, value, meta) => {
+                                const input = document.createElement('input');
+                                input.setAttribute('type', 'file');
+                                input.setAttribute('accept', 'image/*');
+
+                                input.addEventListener('change', (e) => {
+                                    const file = e.target.files[0];
+                                    const reader = new FileReader();
+                                    reader.addEventListener('load', () => {
+                                        const id = 'blobid' + (new Date()).getTime();
+                                        const blobCache = tinymce.activeEditor.editorUpload.blobCache;
+                                        const base64 = reader.result.split(',')[1];
+                                        const blobInfo = blobCache.create(id, file, base64);
+                                        blobCache.add(blobInfo);
+                                        cb(blobInfo.blobUri(), { title: file.name });
+                                    });
+                                    reader.readAsDataURL(file);
+                                });
+                                input.click();
+                            },
+                            setup: function(editor) {
+                                editor.on('change', function() { editor.save(); });
+                            },
+                            content_style: 'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; font-size: 14px; background-color: #fbfbfb; }'
+                        });
+                    } else {
+                        console.warn('TinyMCE is not loaded. Rich Text Editor fields will appear as plain text areas.');
+                    }
+
+                    // Ensure a form ID exists and wire up a submit handler
+                    const form = document.querySelector('form');
+                    if (form) {
+                        form.addEventListener('submit', function(e) {
+                            // If using TinyMCE, ensure the content is updated before submit
+                            if (typeof tinymce !== 'undefined') {
+                                tinymce.triggerSave();
+                            }
+                        });
+                    }
+                });
+            </script>
+            @endsection
+        HTML;
+    }
+    /**
+     * Create the Base64 Image Processor Interface and Service if they don't already exist.
+     */
+    protected function generateBaseImageProcessorFiles()
+    {
+        $interfacePath = app_path('Services/Contracts/ProcessBase64ImagesServiceInterface.php');
+        $servicePath = app_path('Services/Implementation/ProcessBase64ImagesService.php');
+
+        if (!\Illuminate\Support\Facades\File::exists($interfacePath)) {
+            \Illuminate\Support\Facades\File::ensureDirectoryExists(dirname($interfacePath));
+            \Illuminate\Support\Facades\File::copy(__DIR__ . '/../Stubs/process.base64.service.contract.stub', $interfacePath);
+            $this->info("Generated base file: {$interfacePath}");
+        }
+
+        if (!\Illuminate\Support\Facades\File::exists($servicePath)) {
+            \Illuminate\Support\Facades\File::ensureDirectoryExists(dirname($servicePath));
+            \Illuminate\Support\Facades\File::copy(__DIR__ . '/../Stubs/process.base64.service.impl.stub', $servicePath);
+            $this->info("Generated base file: {$servicePath}");
         }
     }
     

@@ -1,0 +1,16 @@
+@extends('{{ layoutName }}')
+
+@section('content')
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="mb-0">Trashed {{ $modelName }}s</h4>
+        
+        <a href="{{ route($routeName . '.index') }}" class="btn btn-secondary btn-sm">
+            <i class="bx bx-arrow-back"></i> Back to List
+        </a>
+    </div>
+
+    <!-- Pass trashed parameter or distinct DataTable configuration -->
+    <livewire:data-table :config="config('datatable.' . $configPath)" :trashed="true" />
+</div>
+@endsection

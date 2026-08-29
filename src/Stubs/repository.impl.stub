@@ -17,4 +17,18 @@ class {{ class }} implements {{ model }}RepositoryInterface
         return $record;
     }
     public function delete($id) { return $this->find($id)->delete(); }
+    public function getTrashed()
+    {
+        return $this->model->onlyTrashed()->get();
+    }
+
+    public function restore($id)
+    {
+        return $this->model->onlyTrashed()->findOrFail($id)->restore();
+    }
+
+    public function forceDelete($id)
+    {
+        return $this->model->onlyTrashed()->findOrFail($id)->forceDelete();
+    }
 }

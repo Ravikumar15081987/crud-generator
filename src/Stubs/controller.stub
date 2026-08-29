@@ -19,9 +19,8 @@ class {{ modelName }}Controller extends Controller
 
     public function index()
     {
-        ${{ modelNamePluralLowerCase }} = $this->service->all();
-        
-        return view('{{ viewPrefix }}{{ model-plural-kebab }}.index', compact('{{ modelNamePluralLowerCase }}'));
+        $filtersConfig = [];        
+        return view('{{ viewPrefix }}{{ model-plural-kebab }}.index', compact('filtersConfig'));
     }
 
     public function create()
@@ -68,5 +67,26 @@ class {{ modelName }}Controller extends Controller
         UiNotify::success('{{ modelName }} deleted successfully!', 'Success');
 
         return redirect()->route('{{ viewPrefix }}{{ model-plural-kebab }}.index');
+    }
+
+    public function trashed()
+    {
+        // For Livewire, you can point this to a specific trashed view, 
+        // or just pass a flag to the main index view.
+        return view('{{ viewPrefix }}{{ model-plural-kebab }}.trashed');
+    }
+
+    public function restore($id)
+    {
+        $this->{{ modelNameLowerCase }}Service->restore($id);
+        UiNotify::success('{{ modelName }} restored successfully.');
+        return redirect()->back();
+    }
+
+    public function forceDelete($id)
+    {
+        $this->{{ modelNameLowerCase }}Service->forceDelete($id);
+        UiNotify::success('{{ modelName }} permanently deleted.');
+        return redirect()->back();
     }
 }

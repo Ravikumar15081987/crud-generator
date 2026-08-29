@@ -1,0 +1,228 @@
+<?php
+
+namespace App\Services\Implementation;
+
+use App\Services\Contracts\ProcessBase64ImagesServiceInterface;
+use DOMDocument;
+use DOMElement;
+use DOMXPath;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
+
+class ProcessBase64ImagesService implements ProcessBase64ImagesServiceInterface
+{
+    /**
+     * Processes base64, external, and local images in HTML content.
+     */
+    public function process(string $description, Model $model, string $collectionName): string
+    {
+        if (trim($description) === '') {
+            return '';
+        }
+
+        $dom = new DOMDocument('1.0', 'UTF-8');
+        libxml_use_internal_errors(true);
+
+        $htmlContent = '<!DOCTYPE html><html><body>'.$description.'</body></html>';
+
+        if (! @$dom->loadHTML($htmlContent, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD)) {
+            Log::error('Failed to parse HTML content');
+
+            return $description;
+        }
+        libxml_clear_errors();
+
+        $xpath = new DOMXPath($dom);
+        $images = $xpath->query('//img');
+
+        if ($images->length === 0) {
+            return $description;
+        }
+
+        foreach ($images as $image) {
+            if (! $image instanceof DOMElement) {
+                continue;
+            }
+
+            $imageUrl = trim($image->getAttribute('src'));
+
+            // 💡 Fallback Clean-up: Sanitize accidental raw string Blade macros if present
+            if (str_starts_with($imageUrl, "asset('")) {
+                $imageUrl = str_replace("asset('", '', $imageUrl);
+                $imageUrl = rtrim($imageUrl, "')");
+            } elseif (str_starts_with($imageUrl, "{{asset('") || str_starts_with($imageUrl, "{{ asset('")) {
+                $imageUrl = str_replace(["{{asset('", "{{ asset('", "')}}", "') }}", '}}'], '', $imageUrl);
+                $imageUrl = trim($imageUrl);
+            }
+
+            // Route to proper handler based on formatting priority
+            if (filter_var($imageUrl, FILTER_VALIDATE_URL)) {
+                $this->handleExternalImage($image, $imageUrl, $model, $collectionName);
+            } elseif (str_contains($imageUrl, 'base64')) {
+                $this->handleBase64Image($image, $imageUrl, $model, $collectionName);
+            } elseif (! empty($imageUrl) && file_exists(public_path($imageUrl))) {
+                $this->handleLocalAssetImage($image, $imageUrl, $model, $collectionName);
+            } else {
+                Log::warning("Image processing skipped. File not found or unparseable: {$imageUrl}");
+            }
+        }
+
+        $body = $dom->getElementsByTagName('body')->item(0);
+        if (! $body) {
+            return $description;
+        }
+
+        $innerHTML = '';
+        foreach ($body->childNodes as $child) {
+            $innerHTML .= $dom->saveHTML($child);
+        }
+
+        return $innerHTML;
+    }
+
+    /**
+     * Handles the conversion of a single base64 image to a media item.
+     */
+    private function handleBase64Image(
+        DOMElement $image, string $imageUrl, Model $model,
+        string $collectionName, array $config = []): void
+    {
+        $config = array_merge([
+            'disk' => 'public',
+            'max_size_kb' => 4096, // Boosted to 4MB for high-resolution images
+            'allowed_mime_types' => ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg+xml'],
+        ], $config);
+
+        $tempDiskPath = null;
+        try {
+            $extension = '.png';
+            if (preg_match('/^data:image\/(\w+\+?\w+);base64,/', $imageUrl, $type)) {
+                $mimeType = strtolower($type[1]);
+                if (! in_array($mimeType, $config['allowed_mime_types'], true)) {
+                    Log::warning("Skipping base64 image with disallowed MIME type: {$mimeType}");
+
+                    return;
+                }
+                $extension = '.'.$mimeType;
+            }
+
+            $base64Data = preg_replace('/^data:image\/\w+;base64,/', '', $imageUrl);
+            $imageData = base64_decode($base64Data);
+
+            if ($imageData === false) {
+                Log::warning('Invalid base64 image data found.');
+
+                return;
+            }
+
+            $imageSizeKb = strlen($imageData) / 1024;
+            if ($imageSizeKb > $config['max_size_kb']) {
+                Log::warning("Skipping base64 image: Size ({$imageSizeKb} KB) exceeds maximum limit.");
+
+                return;
+            }
+
+            $tempDiskPath = 'temp/'.uniqid('', true).$extension;
+            Storage::put($tempDiskPath, $imageData);
+
+            $media = $model->addMedia(Storage::path($tempDiskPath))
+                ->toMediaCollection($collectionName);
+
+            $image->setAttribute('src', $media->getUrl());
+
+        } catch (\Exception $e) {
+            Log::error('Media Addition Error (Base64): '.$e->getMessage(), ['exception' => $e]);
+        } finally {
+            if ($tempDiskPath && Storage::exists($tempDiskPath)) {
+                Storage::delete($tempDiskPath);
+            }
+        }
+    }
+
+    /**
+     * Downloads an external image and converts it to a media item.
+     */
+    private function handleExternalImage(DOMElement $image, string $imageUrl, Model $model, string $collectionName): void
+    {
+        $validation = Validator::make(['url' => $imageUrl], [
+            'url' => 'required|url|not_in:127.0.0.1,localhost|ends_with:.png,.jpg,.jpeg,.gif,.svg,.webp',
+        ]);
+
+        if ($validation->fails()) {
+            Log::warning("Skipping invalid or potentially malicious external URL: {$imageUrl}");
+
+            return;
+        }
+
+        try {
+            $host = parse_url($imageUrl, PHP_URL_HOST);
+            if ($host) {
+                $ip = gethostbyname($host);
+                if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+                    Log::warning("Skipping URL resolving to private/reserved IP: {$imageUrl} -> {$ip}");
+
+                    return;
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error("Could not resolve host for URL: {$imageUrl}");
+
+            return;
+        }
+
+        try {
+            $response = Http::timeout(10)->get($imageUrl);
+
+            if (! $response->successful()) {
+                Log::warning("Failed to download external image from: {$imageUrl}");
+
+                return;
+            }
+
+            $media = $model->addMediaFromString($response->body())
+                ->usingFileName(basename($imageUrl))
+                ->toMediaCollection($collectionName);
+
+            $image->setAttribute('src', $media->getUrl());
+
+        } catch (\Exception $e) {
+            Log::error("Failed to process external image {$imageUrl}: ".$e->getMessage(), ['exception' => $e]);
+        }
+    }
+
+    /**
+     * Maps and imports local public asset paths into the media library.
+     */
+    private function handleLocalAssetImage(DOMElement $image, string $imageUrl, Model $model, string $collectionName): void
+    {
+        Log::info('Attempting to process local file: '.public_path($imageUrl));
+        Log::info('Does file exist? '.(file_exists(public_path($imageUrl)) ? 'YES' : 'NO'));
+
+        try {
+            $absolutePath = public_path($imageUrl);
+
+            // Double check file structure explicitly
+            $mimeType = mime_content_type($absolutePath);
+            $allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
+
+            if (! in_array($mimeType, $allowedMimes, true)) {
+                Log::warning("Skipping local file: Content type '{$mimeType}' is not an authorized image format.");
+
+                return;
+            }
+
+            // preservingOriginal keeps your public assets untouched so paths elsewhere don't break!
+            $media = $model->addMedia($absolutePath)
+                ->preservingOriginal()
+                ->toMediaCollection($collectionName);
+
+            $image->setAttribute('src', $media->getUrl());
+
+        } catch (\Exception $e) {
+            Log::error("Failed to process local asset image {$imageUrl}: ".$e->getMessage(), ['exception' => $e]);
+        }
+    }
+}

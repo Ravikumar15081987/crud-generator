@@ -11,10 +11,14 @@ class {{ modelName }}Service implements {{ modelName }}ServiceInterface
     use HandlesSafeTransactions;
 
     protected ${{ modelNameLowerCase }}Repository;
+    protected $imageProcessor;
 
-    public function __construct({{ modelName }}RepositoryInterface ${{ modelNameLowerCase }}Repository)
-    {
+    public function __construct(
+        {{ modelName }}RepositoryInterface ${{ modelNameLowerCase }}Repository,
+        ProcessBase64ImagesServiceInterface $imageProcessor
+    ) {
         $this->{{ modelNameLowerCase }}Repository = ${{ modelNameLowerCase }}Repository;
+        $this->imageProcessor = $imageProcessor;
     }
 
     public function all()
@@ -30,13 +34,36 @@ class {{ modelName }}Service implements {{ modelName }}ServiceInterface
     public function create(array $data)
     {
         return $this->executeSafeTransaction(function () use ($data) {
-            return $this->{{ modelNameLowerCase }}Repository->create($data);
+            $record = $this->{{ modelNameLowerCase }}Repository->create($data);
+            
+            // Auto-process TinyMCE Base64 images if a rich text field exists
+            if (isset($data['description'])) {
+                $processedContent = $this->imageProcessor->process(
+                    $data['description'], 
+                    $record, 
+                    '{{ modelNameUpperCase }}_MEDIA'
+                );
+                $this->{{ modelNameLowerCase }}Repository->update($record->id, ['description' => $processedContent]);
+            }
+
+            return $record;
         });
     }
 
     public function update($id, array $data)
     {
         return $this->executeSafeTransaction(function () use ($id, $data) {
+            $record = $this->{{ modelNameLowerCase }}Repository->find($id);
+
+            // Auto-process TinyMCE Base64 images if a rich text field exists
+            if (isset($data['description'])) {
+                $data['description'] = $this->imageProcessor->process(
+                    $data['description'], 
+                    $record, 
+                    '{{ modelNameUpperCase }}_MEDIA'
+                );
+            }
+
             return $this->{{ modelNameLowerCase }}Repository->update($id, $data);
         });
     }
@@ -45,6 +72,25 @@ class {{ modelName }}Service implements {{ modelName }}ServiceInterface
     {
         return $this->executeSafeTransaction(function () use ($id) {
             return $this->{{ modelNameLowerCase }}Repository->delete($id);
+        });
+    }
+
+    public function getTrashed()
+    {
+        return $this->{{ modelNameLowerCase }}Repository->getTrashed();
+    }
+
+    public function restore($id)
+    {
+        return $this->executeSafeTransaction(function () use ($id) {
+            return $this->{{ modelNameLowerCase }}Repository->restore($id);
+        });
+    }
+
+    public function forceDelete($id)
+    {
+        return $this->executeSafeTransaction(function () use ($id) {
+            return $this->{{ modelNameLowerCase }}Repository->forceDelete($id);
         });
     }
 }

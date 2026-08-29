@@ -2,6 +2,13 @@
 
 @section('title', 'Edit {{ modelName }}')
 
+@section('page-style')
+    <style>
+        .tox-statusbar__branding, .tox-statusbar__help-text, .tox-promotion, .tox-statusbar__right-container span { display: none; }
+        .tox .tox-edit-area__iframe { background-color: #fbfbfb !important; border: 0; box-sizing: border-box; flex: 1; height: 100%; position: absolute; width: 100%; }
+    </style>
+@endsection
+
 @section('content')
 <div class="flex-grow-1 py-4">
     <h4 class="fw-bold text-dark mb-4">Edit {{ modelName }}</h4>
@@ -22,4 +29,70 @@
         </form>
     </div>
 </div>
+@endsection
+
+@section('page_script')
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tinymce/7.6.0/tinymce.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {        
+        // TINYMCE INITIALIZATION
+        if (typeof tinymce !== 'undefined') {
+            tinymce.init({
+                selector: '.tinymce-editor',
+                license_key: 'gpl',
+                height: 400,
+                menubar: true,
+                plugins: [
+                    'advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'preview',
+                    'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
+                    'insertdatetime', 'media', 'table', 'code', 'wordcount'
+                ],
+                toolbar: 'undo redo | blocks | bold italic forecolor | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | removeformat | code',
+                file_picker_types: 'image',
+                file_picker_callback: (cb, value, meta) => {
+                    const input = document.createElement('input');
+                    input.setAttribute('type', 'file');
+                    input.setAttribute('accept', 'image/*');
+
+                    input.addEventListener('change', (e) => {
+                        const file = e.target.files[0];
+                        const reader = new FileReader();
+                        reader.addEventListener('load', () => {
+                            const id = 'blobid' + (new Date()).getTime();
+                            const blobCache = tinymce.activeEditor.editorUpload.blobCache;
+                            const base64 = reader.result.split(',')[1];
+                            const blobInfo = blobCache.create(id, file, base64);
+                            blobCache.add(blobInfo);
+                            cb(blobInfo.blobUri(), { title: file.name });
+                        });
+                        reader.readAsDataURL(file);
+                    });
+                    input.click();
+                },
+                setup: function(editor) {
+                    editor.on('change', function() { editor.save(); });
+                },
+                content_style: 'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; font-size: 14px; background-color: #fbfbfb; }'
+            });
+        } else {
+            console.warn('TinyMCE is not loaded. Rich Text Editor fields will appear as plain text areas.');
+        }
+
+        // Example: Ensure a form ID exists and wire up a submit handler
+        // (Optional, if you want JS-based submission)
+        const form = document.querySelector('form');
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                // If using TinyMCE, ensure the content is updated before submit
+                if (typeof tinymce !== 'undefined') {
+                    // This tells TinyMCE to push the content from the editor to the textarea
+                    tinymce.triggerSave();
+                }
+                
+                // You can add your own validation logic here
+                // e.g., check required fields, validate file sizes, etc.
+            });
+        }
+    });
+</script>
 @endsection
