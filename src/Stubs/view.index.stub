@@ -12,17 +12,17 @@
         </div>
         
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h4 class="mb-0">{{ $modelName }} List</h4>
+            <h4 class="mb-0">{{ modelName }} List</h4>
             
             <div class="d-flex gap-2">
                 <!-- View Trashed Records Button -->
-                <a href="{{ route($routeName . '.trashed') }}" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1">
+                <a href="{{ route('{{ routeName }}.trashed') }}" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1">
                     <i class="bx bx-trash"></i> View Trash
                 </a>
 
                 <!-- Create New Record Button -->
-                <a href="{{ route($routeName . '.create') }}" class="btn btn-primary btn-sm d-flex align-items-center gap-1">
-                    <i class="bx bx-plus"></i> Add {{ $modelName }}
+                <a href="{{ route('{{ routeName }}.create') }}" class="btn btn-primary btn-sm d-flex align-items-center gap-1">
+                    <i class="bx bx-plus"></i> Add {{ modelName }}
                 </a>
             </div>
         </div>

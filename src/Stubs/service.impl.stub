@@ -5,6 +5,7 @@ namespace App\Services\Implementation;
 use App\Services\Contracts\{{ modelName }}ServiceInterface;
 use App\Repositories\Contracts\{{ modelName }}RepositoryInterface;
 use App\Traits\HandlesSafeTransactions;
+use App\Services\Contracts\ProcessBase64ImagesServiceInterface;
 
 class {{ modelName }}Service implements {{ modelName }}ServiceInterface
 {
