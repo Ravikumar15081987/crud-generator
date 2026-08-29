@@ -11,7 +11,7 @@
             @csrf
             <div class="row g-3">
                 
-                @include('{{ viewPrefix }}{{ modelNameLowerCase }}._form')
+                @include('{{ viewPrefix }}{{ model-plural-kebab }}._form')
                 
                 <div class="col-12 mt-4 text-end">
                     <a href="{{ route('{{ routeName }}.index') }}" class="btn btn-light me-2">Cancel</a>

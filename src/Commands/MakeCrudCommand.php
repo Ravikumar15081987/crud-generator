@@ -323,48 +323,99 @@ class MakeCrudCommand extends Command
     /**
      * Generate Blade views and dynamically build form fields from Model fillable array.
      */
-    /**
-     * Generate Blade views and dynamically build form fields from Model fillable array.
-     */
     protected function generateView($name, $viewType, $role = null, $layoutName = 'layouts.app')
     {
         $modelNameLowerCase = strtolower($name);
-        $modelPluralKebab = Str::kebab(Str::plural($name));
         $rolePath = $role ? strtolower($role) . '/' : '';
+        $modelPluralKebab = \Illuminate\Support\Str::kebab(\Illuminate\Support\Str::plural($name));
         
-        // FIX: Use $modelPluralKebab here so all views land inside resource_path("views/posts")
+        // Ensure all views land inside the pluralized resource path (e.g., resources/views/admin/posts)
         $viewDir = resource_path("views/{$rolePath}{$modelPluralKebab}");
 
-        File::ensureDirectoryExists($viewDir);
+        \Illuminate\Support\Facades\File::ensureDirectoryExists($viewDir);
         $destinationPath = $viewDir . "/{$viewType}.blade.php";
 
         $stubPath = __DIR__ . "/../Stubs/view.{$viewType}.stub";
 
-        if (File::exists($stubPath)) {
-            $stubContent = File::get($stubPath);
+        if (\Illuminate\Support\Facades\File::exists($stubPath)) {
+            $stubContent = \Illuminate\Support\Facades\File::get($stubPath);
 
             $routePrefix = $role ? strtolower($role) . '.' : '';
-            $routeName = $routePrefix . $modelNameLowerCase;
+            $routeName = $routePrefix . $modelPluralKebab;
             $viewPrefix = $role ? strtolower($role) . '.' : '';
 
             $formFieldsHtml = '';
+            
             if ($viewType === '_form') {
                 $modelClass = "\\App\\Models\\{$name}";
                 if (class_exists($modelClass)) {
                     $model = new $modelClass();
                     $fillable = $model->getFillable();
+                    $casts = $model->getCasts(); // Retrieve the casts array
 
                     foreach ($fillable as $field) {
                         $label = ucwords(str_replace('_', ' ', $field));
-                        $formFieldsHtml .= <<<HTML
-                            <div class="col-md-6">
-                                <label class="form-label">{$label} *</label>
-                                <input type="text" name="{$field}" class="form-control @error('{$field}') is-invalid @enderror" value="{{ old('{$field}', \${$modelNameLowerCase}->{$field} ?? '') }}" placeholder="e.g. {$label}">
+                        
+                        // Detect boolean by cast array OR common naming conventions
+                        $castType = $casts[$field] ?? null;
+                        $isBoolean = ($castType === 'boolean' || $castType === 'bool' || \Illuminate\Support\Str::startsWith($field, ['is_', 'has_']));
+                        
+                        // 1. Smart Image/File Uploads
+                        if (in_array($field, ['image', 'photo', 'avatar', 'document', 'file', 'logo'])) {
+                            $formFieldsHtml .= <<<HTML
+                            <div class="col-md-6 mb-3">
+                                <label for="{$field}" class="form-label">{$label}</label>
+                                <input type="file" name="{$field}" class="form-control @error('{$field}') is-invalid @enderror" id="{$field}">
                                 <x-field-error field="{$field}" />
                             </div>\n
-                        HTML;
+HTML;
+                        } 
+                        // 2. Smart Relationship Dropdowns
+                        elseif (\Illuminate\Support\Str::endsWith($field, '_id')) {
+                            $relationName = str_replace('_id', '', $field);
+                            $relationModel = ucfirst(\Illuminate\Support\Str::camel($relationName));
+                            
+                            $formFieldsHtml .= <<<HTML
+                                <div class="col-md-6 mb-3">
+                                    <label for="{$field}" class="form-label">{$label}</label>
+                                    <select name="{$field}" class="form-select @error('{$field}') is-invalid @enderror" id="{$field}">
+                                        <option value="">Select {$label}</option>
+                                        @foreach(\App\Models\\{$relationModel}::all() as \$item)
+                                            <option value="{{ \$item->id }}" {{ old('{$field}', \${$modelNameLowerCase}->{$field} ?? '') == \$item->id ? 'selected' : '' }}>
+                                                {{ \$item->name ?? \$item->title ?? \$item->id }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    <x-field-error field="{$field}" />
+                                </div>\n
+                            HTML;
+                        } 
+                        // 3. Smart Boolean Dropdowns (Yes/No)
+                        elseif ($isBoolean) {
+                            $formFieldsHtml .= <<<HTML
+                                <div class="col-md-6 mb-3">
+                                    <label for="{$field}" class="form-label">{$label}</label>
+                                    <select name="{$field}" class="form-select @error('{$field}') is-invalid @enderror" id="{$field}">
+                                        <option value="1" {{ old('{$field}', \${$modelNameLowerCase}->{$field} ?? '1') == '1' ? 'selected' : '' }}>Yes</option>
+                                        <option value="0" {{ old('{$field}', \${$modelNameLowerCase}->{$field} ?? '') == '0' ? 'selected' : '' }}>No</option>
+                                    </select>
+                                    <x-field-error field="{$field}" />
+                                </div>\n
+                            HTML;
+                        }
+                        // 4. Standard Text Inputs
+                        else {
+                            $formFieldsHtml .= <<<HTML
+                                <div class="col-md-6 mb-3">
+                                    <label for="{$field}" class="form-label">{$label} *</label>
+                                    <input type="text" name="{$field}" class="form-control @error('{$field}') is-invalid @enderror" id="{$field}" value="{{ old('{$field}', \${$modelNameLowerCase}->{$field} ?? '') }}" placeholder="e.g. {$label}">
+                                    <x-field-error field="{$field}" />
+                                </div>\n
+                            HTML;
+                        }
                     }
                 }
+                
                 if (empty($formFieldsHtml)) {
                     $formFieldsHtml = "                <!-- Define your \$fillable array in {$name}.php to auto-generate inputs -->\n";
                 }
@@ -396,87 +447,12 @@ class MakeCrudCommand extends Command
                 $stubContent
             );
 
-            File::put($destinationPath, $fileContent);
+            \Illuminate\Support\Facades\File::put($destinationPath, $fileContent);
             $this->info("Created: {$destinationPath}");
         } else {
             $this->error("Stub not found: {$stubPath}");
         }
     }
-
-    // protected function generateView($name, $viewType, $role = null, $layoutName = 'layouts.app')
-    // {
-    //     $modelNameLowerCase = strtolower($name);
-    //     $rolePath = $role ? strtolower($role) . '/' : '';
-    //     $viewDir = resource_path("views/{$rolePath}{$modelNameLowerCase}");
-    //     $modelPluralKebab = Str::kebab(Str::plural($name));
-
-    //     File::ensureDirectoryExists($viewDir);
-    //     $destinationPath = $viewDir . "/{$viewType}.blade.php";
-
-    //     $stubPath = __DIR__ . "/../Stubs/view.{$viewType}.stub";
-
-    //     if (File::exists($stubPath)) {
-    //         $stubContent = File::get($stubPath);
-
-    //         $routePrefix = $role ? strtolower($role) . '.' : '';
-    //         $routeName = $routePrefix . $modelNameLowerCase;
-    //         $viewPrefix = $role ? strtolower($role) . '.' : '';
-
-    //         $formFieldsHtml = '';
-    //         if ($viewType === '_form') {
-    //             $modelClass = "\\App\\Models\\{$name}";
-    //             if (class_exists($modelClass)) {
-    //                 $model = new $modelClass();
-    //                 $fillable = $model->getFillable();
-
-    //                 foreach ($fillable as $field) {
-    //                     $label = ucwords(str_replace('_', ' ', $field));
-    //                     $formFieldsHtml .= <<<HTML
-    //                         <div class="col-md-6">
-    //                             <label class="form-label">{$label} *</label>
-    //                             <input type="text" name="{$field}" class="form-control @error('{$field}') is-invalid @enderror" value="{{ old('{$field}', \${$modelNameLowerCase}->{$field} ?? '') }}" placeholder="e.g. {$label}">
-    //                             <x-field-error field="{$field}" />
-    //                         </div>\n
-    //                     HTML;
-    //                 }
-    //             }
-    //             if (empty($formFieldsHtml)) {
-    //                 $formFieldsHtml = "                <!-- Define your \$fillable array in {$name}.php to auto-generate inputs -->\n";
-    //             }
-    //         }
-
-    //         $fileContent = str_replace(
-    //             [
-    //                 '{{ modelName }}',
-    //                 '{{ modelNameLowerCase }}',
-    //                 '{{ routeName }}',
-    //                 '{{ viewPrefix }}',
-    //                 '{{ formFields }}',
-    //                 '{{ layoutName }}',
-    //                 '{{ ModelName }}',
-    //                 '{{ role }}',
-    //                 '{{ model-plural-kebab }}'
-    //             ],
-    //             [
-    //                 $name,
-    //                 $modelNameLowerCase,
-    //                 $routeName,
-    //                 $viewPrefix,
-    //                 $formFieldsHtml,
-    //                 $layoutName,
-    //                 $name,
-    //                 $role,
-    //                 $modelPluralKebab
-    //             ],
-    //             $stubContent
-    //         );
-
-    //         File::put($destinationPath, $fileContent);
-    //         $this->info("Created: {$destinationPath}");
-    //     } else {
-    //         $this->error("Stub not found: {$stubPath}");
-    //     }
-    // }
 
     /**
      * Append generated route resource to routes/web.php.
@@ -659,41 +635,29 @@ class MakeCrudCommand extends Command
 
     protected function generateActionComponent($name, $role)
     {
-        // Define the views directory path consistently using plural snake/kebab case
-        $modelNameLowerCase = strtolower($name);
         $rolePath = $role ? strtolower($role) . '/' : '';
-        $viewPath = resource_path("views/{$rolePath}" . Str::plural($modelNameLowerCase));
+        $modelPluralKebab = \Illuminate\Support\Str::kebab(\Illuminate\Support\Str::plural($name));
+        $viewPath = resource_path("views/{$rolePath}{$modelPluralKebab}");
         $componentsPath = $viewPath . '/components';
 
-        // Ensure directories exist cleanly without mismatched names
-        File::ensureDirectoryExists($componentsPath);
+        \Illuminate\Support\Facades\File::ensureDirectoryExists($componentsPath);
         $destinationPath = $componentsPath . '/action.blade.php';
 
-        // Use your action stub file name here (e.g., view.action.stub or actions.blade.stub)
         $stubPath = __DIR__ . "/../Stubs/view.action.stub";
 
-        if (File::exists($stubPath)) {
-            $stubContent = File::get($stubPath);
+        if (\Illuminate\Support\Facades\File::exists($stubPath)) {
+            $stubContent = \Illuminate\Support\Facades\File::get($stubPath);
 
             $routePrefix = $role ? strtolower($role) . '.' : '';
-            $routeName = $routePrefix . $modelNameLowerCase;
-            $modelNamePluralLowerCase = Str::plural($modelNameLowerCase);
+            $routeName = $routePrefix . $modelPluralKebab; // Generates 'admin.posts'
 
             $fileContent = str_replace(
-                [
-                    '{{ modelNamePluralLowerCase }}', 
-                    '{{ modelNameSingularLowerCase }}',
-                    '{{ routeName }}'
-                ],
-                [
-                    $modelNamePluralLowerCase, 
-                    $modelNameLowerCase,
-                    $routeName
-                ],
+                ['{{ routeName }}'],
+                [$routeName],
                 $stubContent
             );
 
-            File::put($destinationPath, $fileContent);
+            \Illuminate\Support\Facades\File::put($destinationPath, $fileContent);
             $this->info("Created Action Component: {$destinationPath}");
         } else {
             $this->error("Stub not found: {$stubPath}");
