@@ -2,8 +2,6 @@
 
 @section('title', 'Create {{ modelName }}')
 
-
-
 @section('content')
 <div class="flex-grow-1 py-4">
     <h4 class="fw-bold text-dark mb-4">Create {{ modelName }}</h4>

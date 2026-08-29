@@ -1,6 +1,6 @@
 <div class="dropdown">
     <button type="button" class="btn p-0 dropdown-toggle hide-arrow" data-bs-toggle="dropdown">
-        <i class="bx bx-dots-vertical-rounded"></i>
+         <i class="ri-more-2-fill text-secondary"></i>
     </button>
     <div class="dropdown-menu">
         @if(method_exists($row, 'trashed') && $row->trashed())
@@ -8,7 +8,7 @@
             <form action="{{ route('{{ routeName }}.restore', $row->id) }}" method="POST" class="d-inline">
                 @csrf
                 <button type="submit" class="dropdown-item text-success">
-                    <i class="bx bx-undo me-1"></i> Restore
+                    <i class="ri-restart-line text-success me-2"></i> Restore
                 </button>
             </form>
 
@@ -17,13 +17,13 @@
                 @csrf
                 @method('DELETE')
                 <button type="submit" class="dropdown-item text-danger">
-                    <i class="bx bx-trash me-1"></i> Delete Permanently
+                    <i class="ri-delete-bin-7-line text-danger me-2"></i> Delete Permanently
                 </button>
             </form>
         @else
             <!-- Edit Option -->
             <a class="dropdown-item" href="{{ route('{{ routeName }}.edit', $row->id) }}">
-                <i class="bx bx-edit-alt me-1"></i> Edit
+                <i class="ri-pencil-line text-warning me-2"></i> Edit
             </a>
 
             <!-- Soft Delete Option -->
@@ -31,7 +31,7 @@
                 @csrf
                 @method('DELETE')
                 <button type="submit" class="dropdown-item text-danger">
-                    <i class="bx bx-trash me-1"></i> Move to Trash
+                    <i class="ri-delete-bin-7-line text-danger me-2"></i> Move to Trash
                 </button>
             </form>
         @endif

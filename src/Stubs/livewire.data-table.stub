@@ -38,6 +38,7 @@ class DataTable extends Component
     public $isLoading = false;
     public $configPath = null; // Custom config path for the DataTable
     public $constraint = null;
+    public $trashed = false;
     public array $filters = [];
     public array $onRowClick = [];
 
@@ -415,13 +416,12 @@ class DataTable extends Component
         return 'N/A';
     }
 
-
-
-    public function mount($model = null, $id = null, $configPath = null, $constraint = null): void
+    public function mount($model = null, $id = null, $configPath = null, $constraint = null, $trashed = false): void
     {
         $this->id = $id ?? 'datatable-' . Str::random(8);
         $this->configPath = $configPath;
         $this->constraint = $constraint;
+        $this->trashed = (bool) $trashed;
         $this->model = $model;
 
         // --- TEMPORARY FIX: UNCONDITIONALLY FORGET OLD STATE ---
@@ -977,6 +977,10 @@ class DataTable extends Component
             }
 
             $query = $this->model::query()->with(array_unique($with));
+
+            if ($this->trashed && method_exists($this->model, 'onlyTrashed')) {
+                $query->onlyTrashed();
+            }
 
             // 3. DYNAMICALLY APPLY CONSTRAINTS AND FILTERS
             $constraints = $this->compileAllConstraints();

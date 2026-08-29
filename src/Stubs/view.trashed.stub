@@ -6,7 +6,7 @@
         <h4 class="mb-0">Trashed {{ modelName }}s</h4>
         
         <a href="{{ route('{{ routeName }}.index') }}" class="btn btn-secondary btn-sm">
-            <i class="bx bx-arrow-back"></i> Back to List
+            <i class="ri-arrow-left-line"></i> Back to List
         </a>
     </div>
 
