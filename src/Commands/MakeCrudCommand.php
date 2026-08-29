@@ -577,9 +577,8 @@ class MakeCrudCommand extends Command
         // Append Action Column
         $configArray .= "        [\n";
         $configArray .= "            'label' => 'Action',\n";
-        $configArray .= "            'view' => '{$roleLower}.{$modelPluralKebab}.components.actions',\n";
+        $configArray .= "            'view' => '{$roleLower}.{$modelPluralKebab}.components.action',\n"; 
         $configArray .= "        ],\n";
-        $configArray .= "    ],\n";
         $configArray .= "    'onRowClick' => [\n        // 'route' => '{$roleLower}.{$modelPluralKebab}.show',\n    ]\n];\n";
 
         File::put($configPath, $configArray);
