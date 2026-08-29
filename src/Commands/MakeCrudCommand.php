@@ -228,6 +228,58 @@ class MakeCrudCommand extends Command
         return 0;
     }
 
+    // protected function generateFile($name, $path, $className, $stubName, $role = null, $extraReplacements = [])
+    // {
+    //     $stubPath = __DIR__ . '/../Stubs/' . $stubName;
+    //     $destinationPath = app_path("{$path}/{$className}.php");
+
+    //     \Illuminate\Support\Facades\File::ensureDirectoryExists(dirname($destinationPath));
+
+    //     if (!\Illuminate\Support\Facades\File::exists($stubPath)) {
+    //         $this->error("Stub not found: {$stubPath}");
+    //         return;
+    //     }
+
+    //     $stubContent = \Illuminate\Support\Facades\File::get($stubPath);
+
+    //     $modelName = $name;
+    //     $modelNameLowerCase = strtolower($name);
+    //     $modelNamePluralLowerCase = \Illuminate\Support\Str::plural($modelNameLowerCase);
+        
+    //     // Add this line to define the plural kebab format
+    //     $modelPluralKebab = \Illuminate\Support\Str::kebab(\Illuminate\Support\Str::plural($name));
+
+    //     $roleFolder = $role ? ucfirst(strtolower($role)) : null;
+    //     $namespace = $roleFolder ? "App\Http\Controllers\\{$roleFolder}" : "App\Http\Controllers";
+    //     $viewPrefix = $roleFolder ? strtolower($roleFolder) . '.' : '';
+    //     $requestNamespace = $roleFolder ? "App\Http\Requests\\{$roleFolder}" : "App\Http\Requests";        
+
+    //     // Add '{{ model-plural-kebab }}' to both arrays
+    //     $search = [
+    //         '{{ class }}', '{{ modelName }}', '{{ model }}',
+    //         '{{ modelNameLowerCase }}', '{{ modelNamePluralLowerCase }}',
+    //         '{{ namespace }}', '{{ viewPrefix }}', '{{ requestNamespace }}',
+    //         '{{ model-plural-kebab }}'
+    //     ];
+
+    //     $replace = [
+    //         $className, $modelName, $modelName,
+    //         $modelNameLowerCase, $modelNamePluralLowerCase,
+    //         $namespace, $viewPrefix, $requestNamespace,
+    //         $modelPluralKebab
+    //     ];
+        
+    //     foreach ($extraReplacements as $key => $value) {
+    //         $search[] = $key;
+    //         $replace[] = $value;
+    //     }
+
+    //     $fileContent = str_replace($search, $replace, $stubContent);
+
+    //     \Illuminate\Support\Facades\File::put($destinationPath, $fileContent);
+    //     $this->info("Created: {$destinationPath}");
+    // }
+
     protected function generateFile($name, $path, $className, $stubName, $role = null, $extraReplacements = [])
     {
         $stubPath = __DIR__ . '/../Stubs/' . $stubName;
@@ -244,6 +296,7 @@ class MakeCrudCommand extends Command
 
         $modelName = $name;
         $modelNameLowerCase = strtolower($name);
+        $modelNameUpperCase = strtoupper($name);
         $modelNamePluralLowerCase = \Illuminate\Support\Str::plural($modelNameLowerCase);
         
         // Add this line to define the plural kebab format
@@ -254,17 +307,17 @@ class MakeCrudCommand extends Command
         $viewPrefix = $roleFolder ? strtolower($roleFolder) . '.' : '';
         $requestNamespace = $roleFolder ? "App\Http\Requests\\{$roleFolder}" : "App\Http\Requests";        
 
-        // Add '{{ model-plural-kebab }}' to both arrays
+        // Added {{ modelNameUpperCase }} to both arrays
         $search = [
             '{{ class }}', '{{ modelName }}', '{{ model }}',
-            '{{ modelNameLowerCase }}', '{{ modelNamePluralLowerCase }}',
+            '{{ modelNameLowerCase }}', '{{ modelNameUpperCase }}', '{{ modelNamePluralLowerCase }}',
             '{{ namespace }}', '{{ viewPrefix }}', '{{ requestNamespace }}',
             '{{ model-plural-kebab }}'
         ];
 
         $replace = [
             $className, $modelName, $modelName,
-            $modelNameLowerCase, $modelNamePluralLowerCase,
+            $modelNameLowerCase, $modelNameUpperCase, $modelNamePluralLowerCase,
             $namespace, $viewPrefix, $requestNamespace,
             $modelPluralKebab
         ];
@@ -279,6 +332,7 @@ class MakeCrudCommand extends Command
         \Illuminate\Support\Facades\File::put($destinationPath, $fileContent);
         $this->info("Created: {$destinationPath}");
     }
+
 
     /**
      * Generate Blade views and dynamically build form fields from Model fillable array.
@@ -518,72 +572,6 @@ class MakeCrudCommand extends Command
             }
         }
     }   
-
-    // protected function generateDataTableConfigIfNeeded($name, $role)
-    // {
-    //     $roleLower = $role ? strtolower($role) : 'default';
-    //     $modelPluralKebab = Str::kebab(Str::plural($name));
-    //     $configDir = config_path("datatable/{$roleLower}");
-    //     $configPath = "{$configDir}/{$modelPluralKebab}.php";
-
-    //     if (File::exists($configPath)) {
-    //         return; // Config already exists
-    //     }
-
-    //     File::ensureDirectoryExists($configDir);
-
-    //     $fqcn = "\\App\\Models\\{$name}";
-    //     $hasAttributes = false;
-
-    //     if (class_exists($fqcn)) {
-    //         $reflection = new \ReflectionClass($fqcn);
-    //         foreach ($reflection->getProperties() as $property) {
-    //             if (!empty($property->getAttributes(\App\Attributes\DataTableColumn::class))) {
-    //                 $hasAttributes = true;
-    //                 break;
-    //             }
-    //         }
-    //     }
-
-    //     if ($hasAttributes) {
-    //         $this->info("Attributes found on {$name}. Skipping config array generation.");
-    //         return;
-    //     }
-
-    //     $configArray = "<?php\n\nreturn [\n    'columns' => [\n";
-        
-    //     if (class_exists($fqcn)) {
-    //         $model = new $fqcn();
-    //         $columns = \Illuminate\Support\Facades\Schema::getColumnListing($model->getTable());
-    //         $ignoredColumns = ['created_at', 'updated_at', 'deleted_at', 'remember_token', 'email_verified_at', 'password'];
-            
-    //         foreach ($columns as $col) {
-    //             if (in_array($col, $ignoredColumns)) continue;
-                
-    //             $label = Str::title(str_replace('_', ' ', $col));
-    //             $configArray .= "        [\n";
-    //             $configArray .= "            'label' => '{$label}',\n";
-    //             $configArray .= "            'field' => '{$col}',\n";
-    //             if ($col === 'id') {
-    //                 $configArray .= "            'hide' => true,\n";
-    //                 $configArray .= "            'searchable' => false,\n";
-    //             } else {
-    //                 $configArray .= "            'searchable' => true,\n";
-    //             }
-    //             $configArray .= "        ],\n";
-    //         }
-    //     }
-
-    //     // Append Action Column
-    //     $configArray .= "        [\n";
-    //     $configArray .= "            'label' => 'Action',\n";
-    //     $configArray .= "            'view' => '{$roleLower}.{$modelPluralKebab}.components.action',\n"; 
-    //     $configArray .= "        ],\n";
-    //     $configArray .= "    'onRowClick' => [\n        // 'route' => '{$roleLower}.{$modelPluralKebab}.show',\n    ]\n];\n";
-
-    //     File::put($configPath, $configArray);
-    //     $this->info("Created DataTable config: {$configPath}");
-    // }
 
     protected function generateDataTableConfigIfNeeded($name, $role)
     {
