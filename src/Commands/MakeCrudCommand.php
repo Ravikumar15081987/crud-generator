@@ -484,7 +484,9 @@ class MakeCrudCommand extends Command
     protected function appendRoute($name, $role = null, $isApi = false)
     {
         $path = base_path($isApi ? 'routes/api.php' : 'routes/web.php');
-        $modelNameLowerCase = strtolower($name);
+        
+        // Define the route URL/name in plural kebab-case (e.g., 'posts' or 'blog-posts')
+        $routeResourceName = \Illuminate\Support\Str::kebab(\Illuminate\Support\Str::plural($name));
 
         if ($role) {
             $roleLower = strtolower($role);
@@ -496,18 +498,46 @@ class MakeCrudCommand extends Command
 
             $route = <<<EOT
                 \nRoute::group(['prefix' => '{$roleLower}', 'as' => '{$roleLower}.', 'middleware' => {$middleware}], function () {
-                    Route::{$routeType}('{$modelNameLowerCase}', {$controller});
+                    Route::{$routeType}('{$routeResourceName}', {$controller});
                 });\n
-                EOT;
+            EOT;
         } else {
             $controller = "\\App\\Http\\Controllers\\{$name}Controller::class";
             $routeType = $isApi ? 'apiResource' : 'resource';
-            $route = "\nRoute::{$routeType}('{$modelNameLowerCase}', {$controller});\n";
+            $route = "\nRoute::{$routeType}('{$routeResourceName}', {$controller});\n";
         }
 
         \Illuminate\Support\Facades\File::append($path, $route);
         $this->info("Appended route for {$name} to " . ($isApi ? 'routes/api.php' : 'routes/web.php'));
     }
+
+    // protected function appendRoute($name, $role = null, $isApi = false)
+    // {
+    //     $path = base_path($isApi ? 'routes/api.php' : 'routes/web.php');
+    //     $modelNameLowerCase = strtolower($name);
+
+    //     if ($role) {
+    //         $roleLower = strtolower($role);
+    //         $roleFolder = ucfirst($roleLower); 
+    //         $controller = "\\App\\Http\\Controllers\\{$roleFolder}\\{$name}Controller::class";
+            
+    //         $routeType = $isApi ? 'apiResource' : 'resource';
+    //         $middleware = $isApi ? "['auth:sanctum', 'role:{$role}']" : "['role:{$role}']";
+
+    //         $route = <<<EOT
+    //             \nRoute::group(['prefix' => '{$roleLower}', 'as' => '{$roleLower}.', 'middleware' => {$middleware}], function () {
+    //                 Route::{$routeType}('{$modelNameLowerCase}', {$controller});
+    //             });\n
+    //             EOT;
+    //     } else {
+    //         $controller = "\\App\\Http\\Controllers\\{$name}Controller::class";
+    //         $routeType = $isApi ? 'apiResource' : 'resource';
+    //         $route = "\nRoute::{$routeType}('{$modelNameLowerCase}', {$controller});\n";
+    //     }
+
+    //     \Illuminate\Support\Facades\File::append($path, $route);
+    //     $this->info("Appended route for {$name} to " . ($isApi ? 'routes/api.php' : 'routes/web.php'));
+    // }
 
     /**
      * Create the UiNotify Facade and Service if they don't already exist.
