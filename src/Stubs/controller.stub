@@ -21,12 +21,12 @@ class {{ modelName }}Controller extends Controller
     {
         ${{ modelNamePluralLowerCase }} = $this->service->all();
         
-        return view('{{ viewPrefix }}{{ modelNameLowerCase }}.index', compact('{{ modelNamePluralLowerCase }}'));
+        return view('{{ viewPrefix }}{{ model-plural-kebab }}.index', compact('{{ modelNamePluralLowerCase }}'));
     }
 
     public function create()
     {
-        return view('{{ viewPrefix }}{{ modelNameLowerCase }}.create');
+        return view('{{ viewPrefix }}{{ model-plural-kebab }}.create');
     }
 
     public function store(Store{{ modelName }}Request $request)
@@ -35,21 +35,21 @@ class {{ modelName }}Controller extends Controller
 
         UiNotify::success('{{ modelName }} created successfully!', 'Success');
 
-        return redirect()->route('{{ viewPrefix }}{{ modelNameLowerCase }}.index');
+        return redirect()->route('{{ viewPrefix }}{{ model-plural-kebab }}.index');
     }
 
     public function show($id)
     {
         ${{ modelNameLowerCase }} = $this->service->find($id);
 
-        return view('{{ viewPrefix }}{{ modelNameLowerCase }}.show', compact('{{ modelNameLowerCase }}'));
+        return view('{{ viewPrefix }}{{ model-plural-kebab }}.show', compact('{{ modelNameLowerCase }}'));
     }
 
     public function edit($id)
     {
         ${{ modelNameLowerCase }} = $this->service->find($id);
 
-        return view('{{ viewPrefix }}{{ modelNameLowerCase }}.edit', compact('{{ modelNameLowerCase }}'));
+        return view('{{ viewPrefix }}{{ model-plural-kebab }}.edit', compact('{{ modelNameLowerCase }}'));
     }
 
     public function update(Update{{ modelName }}Request $request, $id)
@@ -58,7 +58,7 @@ class {{ modelName }}Controller extends Controller
 
         UiNotify::success('{{ modelName }} updated successfully!', 'Success');
 
-        return redirect()->route('{{ viewPrefix }}{{ modelNameLowerCase }}.index');
+        return redirect()->route('{{ viewPrefix }}{{ model-plural-kebab }}.index');
     }
 
     public function destroy($id)
@@ -67,6 +67,6 @@ class {{ modelName }}Controller extends Controller
 
         UiNotify::success('{{ modelName }} deleted successfully!', 'Success');
 
-        return redirect()->route('{{ viewPrefix }}{{ modelNameLowerCase }}.index');
+        return redirect()->route('{{ viewPrefix }}{{ model-plural-kebab }}.index');
     }
 }

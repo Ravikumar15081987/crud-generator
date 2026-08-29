@@ -222,39 +222,91 @@ class MakeCrudCommand extends Command
     /**
      * Generate class files from stubs with dynamic replacements.
      */
+    // protected function generateFile($name, $path, $className, $stubName, $role = null, $extraReplacements = [])
+    // {
+    //     $stubPath = __DIR__ . '/../Stubs/' . $stubName;
+    //     $destinationPath = app_path("{$path}/{$className}.php");
+
+    //     File::ensureDirectoryExists(dirname($destinationPath));
+
+    //     if (!File::exists($stubPath)) {
+    //         $this->error("Stub not found: {$stubPath}");
+    //         return;
+    //     }
+
+    //     $stubContent = File::get($stubPath);
+
+    //     $modelName = $name;
+    //     $modelNameLowerCase = strtolower($name);
+    //     $modelNamePluralLowerCase = Str::plural($modelNameLowerCase);
+
+    //     $roleFolder = $role ? ucfirst(strtolower($role)) : null;
+    //     $namespace = $roleFolder ? "App\Http\Controllers\\{$roleFolder}" : "App\Http\Controllers";
+    //     $viewPrefix = $roleFolder ? strtolower($roleFolder) . '.' : '';
+    //     $requestNamespace = $roleFolder ? "App\Http\Requests\\{$roleFolder}" : "App\Http\Requests";        
+
+    //     $search = [
+    //         '{{ class }}', '{{ modelName }}', '{{ model }}',
+    //         '{{ modelNameLowerCase }}', '{{ modelNamePluralLowerCase }}',
+    //         '{{ namespace }}', '{{ viewPrefix }}', '{{ requestNamespace }}'
+    //     ];
+
+    //     $replace = [
+    //         $className, $modelName, $modelName,
+    //         $modelNameLowerCase, $modelNamePluralLowerCase,
+    //         $namespace, $viewPrefix, $requestNamespace
+    //     ];
+        
+    //     foreach ($extraReplacements as $key => $value) {
+    //         $search[] = $key;
+    //         $replace[] = $value;
+    //     }
+
+    //     $fileContent = str_replace($search, $replace, $stubContent);
+
+    //     File::put($destinationPath, $fileContent);
+    //     $this->info("Created: {$destinationPath}");
+    // }
+
     protected function generateFile($name, $path, $className, $stubName, $role = null, $extraReplacements = [])
     {
         $stubPath = __DIR__ . '/../Stubs/' . $stubName;
         $destinationPath = app_path("{$path}/{$className}.php");
 
-        File::ensureDirectoryExists(dirname($destinationPath));
+        \Illuminate\Support\Facades\File::ensureDirectoryExists(dirname($destinationPath));
 
-        if (!File::exists($stubPath)) {
+        if (!\Illuminate\Support\Facades\File::exists($stubPath)) {
             $this->error("Stub not found: {$stubPath}");
             return;
         }
 
-        $stubContent = File::get($stubPath);
+        $stubContent = \Illuminate\Support\Facades\File::get($stubPath);
 
         $modelName = $name;
         $modelNameLowerCase = strtolower($name);
-        $modelNamePluralLowerCase = Str::plural($modelNameLowerCase);
+        $modelNamePluralLowerCase = \Illuminate\Support\Str::plural($modelNameLowerCase);
+        
+        // Add this line to define the plural kebab format
+        $modelPluralKebab = \Illuminate\Support\Str::kebab(\Illuminate\Support\Str::plural($name));
 
         $roleFolder = $role ? ucfirst(strtolower($role)) : null;
         $namespace = $roleFolder ? "App\Http\Controllers\\{$roleFolder}" : "App\Http\Controllers";
         $viewPrefix = $roleFolder ? strtolower($roleFolder) . '.' : '';
         $requestNamespace = $roleFolder ? "App\Http\Requests\\{$roleFolder}" : "App\Http\Requests";        
 
+        // Add '{{ model-plural-kebab }}' to both arrays
         $search = [
             '{{ class }}', '{{ modelName }}', '{{ model }}',
             '{{ modelNameLowerCase }}', '{{ modelNamePluralLowerCase }}',
-            '{{ namespace }}', '{{ viewPrefix }}', '{{ requestNamespace }}'
+            '{{ namespace }}', '{{ viewPrefix }}', '{{ requestNamespace }}',
+            '{{ model-plural-kebab }}'
         ];
 
         $replace = [
             $className, $modelName, $modelName,
             $modelNameLowerCase, $modelNamePluralLowerCase,
-            $namespace, $viewPrefix, $requestNamespace
+            $namespace, $viewPrefix, $requestNamespace,
+            $modelPluralKebab
         ];
         
         foreach ($extraReplacements as $key => $value) {
@@ -264,7 +316,7 @@ class MakeCrudCommand extends Command
 
         $fileContent = str_replace($search, $replace, $stubContent);
 
-        File::put($destinationPath, $fileContent);
+        \Illuminate\Support\Facades\File::put($destinationPath, $fileContent);
         $this->info("Created: {$destinationPath}");
     }
 
@@ -350,7 +402,7 @@ class MakeCrudCommand extends Command
             $this->error("Stub not found: {$stubPath}");
         }
     }
-    
+
     // protected function generateView($name, $viewType, $role = null, $layoutName = 'layouts.app')
     // {
     //     $modelNameLowerCase = strtolower($name);
